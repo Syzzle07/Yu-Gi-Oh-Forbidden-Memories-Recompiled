@@ -336,7 +336,7 @@ class FramesPage(ttk.Frame):
         # use page_layout(), whose one right column is too cramped here.
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
-        left = ttk.LabelFrame(self, text="Frame styles", padding=6)
+        left = self.left = ttk.LabelFrame(self, text="Frame styles", padding=6)
         left.grid(row=0, column=0, sticky="nsw")
         # Unlike the other UI previews, a frame is itself a portrait card,
         # not the full 320x240 viewer screen.  Giving StageView this exact
@@ -449,11 +449,33 @@ class FramesPage(ttk.Frame):
         self.note = ttk.Label(self.side, style="Hint.TLabel", wraplength=px(self, 440), justify="left")
         self.note.grid(row=5, column=0, sticky="w", pady=(8, 0))
         if locked is not None:
-            left.grid_remove()
-            self.revert_page.pack_forget()
-            self.style_name.set(locked["style"])
-            self.card.set(locked["card"])
-            self.card.entry.configure(state="disabled")
+            self.lock(locked["style"], locked["card"], fill=False)
+
+    def lock(self, style_name, card, fill=True):
+        '''Pin the page to one style and one card (again, for another card, while the page is kept): the
+        list of styles and the ways of applying one to many cards are not shown, and no style becomes
+        the layout's default.'''
+        self.locked = {"style": style_name, "card": card}
+        self.left.grid_remove()
+        self.revert_page.pack_forget()
+        self.style_name.set(style_name)
+        self.card.set(card)
+        self.card.entry.configure(state="disabled")
+        if not getattr(self, "tools_wrapped", False):
+            # The preview's switches (front and back, the kind of card) are one row, which a card column this
+            # narrow cuts off: two rows, the kinds under the face.
+            self.tools_wrapped = True
+            items = self.view.tools.pack_slaves()
+            for widget in items: widget.pack_forget()
+            row = column = 0
+            for widget in items:
+                if isinstance(widget, ttk.Separator):
+                    row, column = 1, 0
+                    continue
+                widget.grid(row=row, column=column, padx=(0, 4), sticky="w")
+                column += 1
+        self.reset_choice()
+        if fill: self.fill()
 
     @property
     def project(self): return self.tab.project

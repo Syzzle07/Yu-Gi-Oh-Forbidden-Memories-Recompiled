@@ -468,8 +468,8 @@ window. It writes no `name`: the variant keeps its card's own name plate, in the
 game's lettering and in the language the player plays in. The mod needs mod API
 25, which the editor writes as `min_api`.
 
-**Design the card...** is for a card that is more than a recolored frame. It opens
-the UI tab's Frames designer on a frame style that is this variant's alone (a
+**Design the card** is for a card that is more than a recolored frame. It shows
+the UI tab's Frames designer in the tab itself, beside the list, on a frame style that is this variant's alone (a
 copy of the frame it had, or of the game's layout) and on the variant as its
 sample card, so the preview is its own picture. Nothing for other cards is shown
 or changed, and no style becomes the layout's default. Drag, resize, hide or tint
@@ -481,7 +481,7 @@ digits. **Name plate...** gives the card a name picture of its own (96x14 units,
 to 4x) in place of the name the game sets in its own lettering: that is how a name in
 another script or font is made. The game draws the name as a one-colour shape in
 the part's tint, so a pale frame needs a dark tint on the name. **Remove the
-design** takes the style away and gives the card the game's frame again. The star
+design** (at the top of the designer) takes the style away and gives the card the game's frame again. The star
 icons themselves (their shape) are the game's: only their place and tint change.
 
 A variant is its own card in a deck (a deck holds three of a card and its

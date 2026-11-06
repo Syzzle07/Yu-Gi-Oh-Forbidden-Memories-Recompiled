@@ -350,14 +350,20 @@ class VariantsTabTest(GuiCase):
         name = variants.design_name(project.added[cid].key)
         other = tab.make(35, None, ("preset", "silver"), 50, "Other")
         tab.show(cid)
-        self.assertFalse(tab.undesign_button.instate(["!disabled"]))
-        window = tab.design()
+        # No design of its own yet: the card, and a button to design it. The designer is not made until needed.
+        self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("grid", ""))
+        self.assertIsNone(tab.designer)
+        page = tab.design()
         self.app.update()
-        self.assertIsNotNone(window)
+        # The designer is in the tab itself: no window of its own.
+        self.assertIsNotNone(page)
+        self.assertIs(page, tab.designer)
+        self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("", "grid"))
+        self.assertEqual(tab.designed_for, (cid, name))
+        self.assertEqual([w for w in tab.winfo_children() if w.winfo_class() == "Toplevel"], [])
         self.assertEqual(project.added[cid].extra["frame_style"], name)
         entries = project.other["card_layout"]["frame_styles"]
         self.assertIn(name, entries)
-        page = window.page
         self.assertEqual((page.style_name.get(), page.card.get()), (name, cid))
         before = {k: v for k, v in entries["foil-silver"].items()}
         # A part moved and resized through the fields, as a person types them.
@@ -403,12 +409,28 @@ class VariantsTabTest(GuiCase):
         for key in ("default_style", "frame_for", "default_styles"):
             self.assertNotIn(key, layout)
         self.assertEqual(variants.window_of_style(project, name)["width"], 120)
-        # Closing hands the card back to the tab, which draws it with its own picture window.
-        window.close()
-        self.app.update()
-        self.assertEqual(tab.current, cid)
-        self.assertTrue(tab.undesign_button.instate(["!disabled"]))
+        # Another variant without a design: the card shown plain; back to this one: the same designer.
+        tab.show(other)
+        self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("grid", ""))
+        tab.show(cid)
+        self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("", "grid"))
+        self.assertIs(tab.designer, page)
+        self.assertEqual((page.style_name.get(), page.card.get(), page.locked["card"]), (name, cid, cid))
         self.assertEqual(tab.frames.var.get(), f"This mod's \"{name}\"")
+        # A second variant designed: the one designer, now on that card and its own style.
+        second = variants.design_name(project.added[other].key)
+        tab.show(other)
+        self.assertIs(tab.design(), page)
+        self.assertEqual((page.style_name.get(), page.card.get()), (second, other))
+        self.assertIn(second, entries)
+        self.assertEqual(entries[name]["art"], {"x": 10, "y": 24, "width": 120, "height": 110})   # the first kept
+        # Choosing another frame for the card takes the designer away; the design stays for later.
+        tab.frames.var.set("Gold foil")
+        tab.frames.selected()
+        self.assertTrue(tab.apply())
+        self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("grid", ""))
+        self.assertIn(second, entries)
+        tab.show(cid)
         # A name plate of its own.
         plate = Path(self.tmp.name) / "plate.png"
         pngio.write(plate, picture(192, 28, (255, 255, 255, 255)))
@@ -419,7 +441,7 @@ class VariantsTabTest(GuiCase):
             tab.remove_design()
         self.assertNotIn(name, project.other["card_layout"]["frame_styles"])
         self.assertNotIn("frame_style", project.added[cid].extra)
-        self.assertFalse(tab.undesign_button.instate(["!disabled"]))
+        self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("grid", ""))
 
     def test_a_mod_read_back_shows_its_variants(self):
         tab, project = self.app.variants, self.app.project

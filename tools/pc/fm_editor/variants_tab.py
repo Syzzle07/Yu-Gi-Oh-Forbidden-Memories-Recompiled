@@ -13,12 +13,13 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from . import art, file_dialogs, frame_presets, pngio, variants
+from . import art, file_dialogs, frame_presets, pngio, ui_frames, variants
 from .tabs import Tab
-from .variants_design import DesignWindow
+from .variants_design import DesignHost
 from .widgets import CardField, FormDialog, WrapLabel, px, scrolled_tree
 
 PREVIEW_W = 210          # the preview card's width at 96 dpi: 1.5x the 140 units of a card
+PLAIN_W = 280            # the card in the tab while it has no design of its own: 2x
 OWN_PNG = "A PNG of my own..."
 NO_CHOICE = "(not one of these)"
 
@@ -31,13 +32,13 @@ class FrameChooser:
     """A combobox of the frames the tab offers, and a PNG of the modder's own. `choice` is what
     variants.set_frame takes: None, ("preset", name), ("style", name) or ("png", bytes, stem)."""
 
-    def __init__(self, master, project_getter, on_change):
+    def __init__(self, master, project_getter, on_change, width=30):
         self.project_getter = project_getter
         self.on_change = on_change
         self.options = []
         self.own = None                    # ("png", bytes, stem) once a file is chosen
         self.var = tk.StringVar()
-        self.box = ttk.Combobox(master, textvariable=self.var, state="readonly", width=30)
+        self.box = ttk.Combobox(master, textvariable=self.var, state="readonly", width=width)
         self.box.bind("<<ComboboxSelected>>", lambda e: self.selected())
         self.reload()
 
@@ -118,51 +119,73 @@ class VariantsTab(Tab):
             "(5% is one drop in twenty). A deck holds three of a card and its variants together, and the Library "
             "shows them as one entry. Needs mod API 25 (the editor writes min_api itself).")
         ).pack(fill="x")
+        self.designer = None            # the Frames designer, made when a card first has a design of its own
+        self.designed_for = None        # (card id, style name) the designer shows now
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True, pady=(6, 0))
-        left = ttk.LabelFrame(body, text="Variants", padding=6)
-        left.pack(side="left", fill="y")
-        frame, self.tree = scrolled_tree(left, [("card", "Card"), ("name", "Variant"), ("chance", "Chance"),
-                                                ("frame", "Frame")], [170, 130, 60, 110], 14)
-        frame.pack(fill="y", expand=True)
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
+        left = ttk.Frame(body)
+        left.grid(row=0, column=0, sticky="ns")
+        listing = ttk.LabelFrame(left, text="Variants", padding=6)
+        listing.pack(fill="x")
+        frame, self.tree = scrolled_tree(listing, [("card", "Card"), ("name", "Variant"), ("chance", "Chance"),
+                                                   ("frame", "Frame")], [125, 85, 50, 95], 9)
+        frame.pack(fill="x")
         self.tree.bind("<<TreeviewSelect>>", lambda e: self.pick())
-        buttons = ttk.Frame(left)
+        buttons = ttk.Frame(listing)
         buttons.pack(fill="x", pady=(4, 0))
         ttk.Button(buttons, text="New variant...", command=self.new).pack(side="left")
         self.remove_button = ttk.Button(buttons, text="Remove", command=self.remove)
         self.remove_button.pack(side="left", padx=4)
 
-        right = ttk.LabelFrame(body, text="The chosen variant", padding=8)
-        right.pack(side="left", fill="both", expand=True, padx=(8, 0))
-        self.preview = ttk.Label(right)
-        self.preview.grid(row=0, column=0, rowspan=7, sticky="n", padx=(0, 12))
-        self.title = ttk.Label(right, text="Choose a variant, or make one.")
-        self.title.grid(row=0, column=1, columnspan=2, sticky="w")
+        form = ttk.LabelFrame(left, text="The chosen variant", padding=8)
+        form.pack(fill="x", pady=(8, 0))
+        self.title = ttk.Label(form, text="Choose a variant, or make one.")
+        self.title.grid(row=0, column=0, columnspan=2, sticky="w")
         self.label = tk.StringVar()
         self.chance = tk.StringVar()
-        ttk.Label(right, text="Label").grid(row=1, column=1, sticky="w", pady=(6, 0))
-        ttk.Entry(right, textvariable=self.label, width=26).grid(row=1, column=2, sticky="w", padx=4, pady=(6, 0))
-        ttk.Label(right, text="Chance (%)").grid(row=2, column=1, sticky="w", pady=(4, 0))
-        ttk.Entry(right, textvariable=self.chance, width=8).grid(row=2, column=2, sticky="w", padx=4, pady=(4, 0))
-        ttk.Label(right, text="Frame").grid(row=3, column=1, sticky="w", pady=(4, 0))
-        self.frames = FrameChooser(right, lambda: self.project, self.preview_changed)
-        self.frames.box.grid(row=3, column=2, sticky="w", padx=4, pady=(4, 0))
-        pictures = ttk.Frame(right)
-        pictures.grid(row=4, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Label(form, text="Label").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(form, textvariable=self.label, width=22).grid(row=1, column=1, sticky="w", padx=4, pady=(6, 0))
+        ttk.Label(form, text="Chance (%)").grid(row=2, column=0, sticky="w", pady=(4, 0))
+        ttk.Entry(form, textvariable=self.chance, width=8).grid(row=2, column=1, sticky="w", padx=4, pady=(4, 0))
+        ttk.Label(form, text="Frame").grid(row=3, column=0, sticky="w", pady=(4, 0))
+        self.frames = FrameChooser(form, lambda: self.project, self.preview_changed, width=24)
+        self.frames.box.grid(row=3, column=1, sticky="w", padx=4, pady=(4, 0))
+        pictures = ttk.Frame(form)
+        pictures.grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
         self.picture_button = ttk.Button(pictures, text="Choose a picture...", command=self.choose_picture)
         self.picture_button.pack(side="left")
         self.plate_button = ttk.Button(pictures, text="Name plate...", command=self.choose_plate)
         self.plate_button.pack(side="left", padx=(4, 0))
-        design = ttk.Frame(right)
-        design.grid(row=5, column=1, columnspan=2, sticky="w", pady=(6, 0))
-        self.design_button = ttk.Button(design, text="Design the card...", command=self.design)
-        self.design_button.pack(side="left")
-        self.undesign_button = ttk.Button(design, text="Remove the design", command=self.remove_design)
-        self.undesign_button.pack(side="left", padx=(4, 0))
-        self.apply_button = ttk.Button(right, text="Apply", command=self.apply)
-        self.apply_button.grid(row=6, column=1, sticky="w", pady=(10, 0))
-        self.status = ttk.Label(right, style="Hint.TLabel", wraplength=px(self, 360), justify="left")
-        self.status.grid(row=7, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.apply_button = ttk.Button(form, text="Apply", command=self.apply)
+        self.apply_button.grid(row=5, column=0, sticky="w", pady=(10, 0))
+        self.status = ttk.Label(form, style="Hint.TLabel", wraplength=px(self, 300), justify="left")
+        self.status.grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        # The rest of the tab is the card as it is, or, once it has a design of its own, the Frames designer.
+        right = ttk.Frame(body)
+        right.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        right.rowconfigure(0, weight=1)
+        right.columnconfigure(0, weight=1)
+        self.plain = ttk.LabelFrame(right, text="The card", padding=8)
+        self.plain.grid(row=0, column=0, sticky="nsew")
+        self.preview = ttk.Label(self.plain)
+        self.preview.pack(anchor="n")
+        WrapLabel(self.plain, style="Hint.TLabel", text=(
+            "This card has the game's frame or a preset. Design it to place every part yourself: the frame picture, "
+            "the picture's window, the name, the stars, the element, ATK and DEF and their pictures, in a card of its own.")
+        ).pack(fill="x", pady=(10, 0))
+        self.design_button = ttk.Button(self.plain, text="Design the card", command=self.design)
+        self.design_button.pack(anchor="w", pady=(6, 0))
+        self.design_box = ttk.LabelFrame(right, text="This card's own design", padding=6)
+        self.design_box.grid(row=0, column=0, sticky="nsew")
+        self.design_box.grid_remove()
+        bar = ttk.Frame(self.design_box)
+        bar.pack(fill="x")
+        self.undesign_button = ttk.Button(bar, text="Remove the design", command=self.remove_design)
+        self.undesign_button.pack(side="left")
+        ttk.Label(bar, text="Drag the parts on the card, or use the fields.", style="Hint.TLabel").pack(side="left", padx=8)
         self.show(None)
 
     # --- the list -------------------------------------------------------------------------
@@ -207,8 +230,6 @@ class VariantsTab(Tab):
         for widget in (self.remove_button, self.picture_button, self.plate_button, self.design_button,
                        self.apply_button):
             widget.state(["!disabled"] if on else ["disabled"])
-        own = on and variants.has_own_design(project, self.current)
-        self.undesign_button.state(["!disabled"] if own else ["disabled"])
         self.status.configure(text="")
         if not on:
             self.title.configure(text="Choose a variant, or make one.")
@@ -217,6 +238,7 @@ class VariantsTab(Tab):
             self.frames.reload(None)
             self.preview.configure(image="")
             self.photo = None
+            self.show_right(force=True)
             return
         v = variants.read(project, self.current)
         self.title.configure(text=f"{project.card_label(v.base)}   ({v.key})")
@@ -224,6 +246,30 @@ class VariantsTab(Tab):
         self.chance.set(variants.percent_text(v.permille).rstrip("%"))
         self.frames.reload(variants.frame_of(project, self.current))
         self.draw()
+        self.show_right(force=True)
+
+    def show_right(self, force=False):
+        '''The right of the tab: the Frames designer when the chosen variant has a design of its own, else
+        the card as it is. Said again only when it changed, unless `force`.'''
+        project, cid = self.project, self.current
+        if cid is None or project is None or not variants.has_own_design(project, cid):
+            if force or self.designed_for is not None:
+                self.design_box.grid_remove()
+                self.plain.grid()
+                self.designed_for = None
+            return
+        name = variants.design_name(project.added[cid].key)
+        if self.designed_for == (cid, name) and not force:
+            return
+        if self.designer is None:
+            self.designer = ui_frames.FramesPage(self.design_box, DesignHost(self.app), locked={"style": name, "card": cid})
+            self.designer.pack(fill="both", expand=True, pady=(4, 0))
+            self.designer.fill()
+        else:
+            self.designer.lock(name, cid)
+        self.plain.grid_remove()
+        self.design_box.grid()
+        self.designed_for = (cid, name)
 
     def picture_of(self, cid):
         """The picture the card shows now: the mod's own, else its base's from the disc."""
@@ -238,7 +284,7 @@ class VariantsTab(Tab):
         if self.current is None or self.project is None:
             return
         window = variants.window_of_choice(self.project, self.frames.choice())
-        card = variants.card_picture(self.picture_of(self.current), self.frames.frame_image(), px(self, PREVIEW_W),
+        card = variants.card_picture(self.picture_of(self.current), self.frames.frame_image(), px(self, PLAIN_W),
                                      window)
         self.photo = photo(self, card)
         self.preview.configure(image=self.photo)
@@ -275,6 +321,7 @@ class VariantsTab(Tab):
         self.frames.reload(variants.frame_of(project, cid))
         self.status.configure(text="")
         self.draw()
+        self.show_right()
         self.applied()
         return True
 
@@ -326,25 +373,22 @@ class VariantsTab(Tab):
     # --- the card's own design -----------------------------------------------------------------
 
     def design(self):
-        '''The designer window for the chosen variant: its own frame style, edited part by part.'''
+        '''Give the chosen variant a frame style of its own and show the Frames designer for it: the
+        right of the tab, edited part by part. Returns the designer page.'''
         cid = self.current
         if cid is None or not self.apply():
             return None
-        name = variants.own_design(self.project, cid)
-        self.app.changed()
-        self.fill()
-        self.tree.selection_set(str(cid))
-        self.frames.reload(variants.frame_of(self.project, cid))
-        self.draw()
-        return DesignWindow(self, self.app, cid, name, on_close=lambda: self.designed(cid))
-
-    def designed(self, cid):
-        '''The designer was closed: the list and the card as they are now.'''
-        if self.project is None or cid not in self.project.added:
-            return
-        self.fill()
-        self.tree.selection_set(str(cid))
-        self.show(cid)
+        try:
+            variants.own_design(self.project, cid)
+            self.app.changed()
+            self.fill()
+            self.tree.selection_set(str(cid))
+            self.frames.reload(variants.frame_of(self.project, cid))
+            self.show_right(force=True)
+        except Exception as problem:        # never silently: a person pressed a button
+            messagebox.showerror("FM Editor", f"The designer could not be shown: {problem}", parent=self)
+            raise
+        return self.designer
 
     def remove_design(self):
         cid = self.current
