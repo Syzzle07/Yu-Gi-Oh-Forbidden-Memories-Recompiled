@@ -237,6 +237,7 @@ The tabs, left to right:
 |---|---|
 | [Cards](#cards) | a card's name, type, attribute, level, ATK/DEF, stars, password, price, frame, tags, card text, monster effects and notes; magic, trap, ritual and equip cards' effects; adding cards |
 | [Art](#art) | a card's picture, thumbnail and name plate |
+| [Variants](#variants) | a card's alternate versions: another picture and frame, won in its place by a chance |
 | [Fusions](#fusions) | every pair and its result; many pairs at once with **Bulk (many pairs)...** |
 | [Equips](#equips) | the monsters each equip card fits |
 | [Rituals](#rituals) | each ritual's tributes (one to five, from the field, the hand or both) and what it summons |
@@ -440,6 +441,39 @@ the picture when that makes them bigger. The list's **Art** column says which
 parts the mod changes. A card the mod adds with a name of its own has its
 name plate set by the game in Times when it starts, unless you import one.
 Where the art goes is under [What it writes](#what-it-writes).
+
+### Variants
+
+A variant is another version of a card, as a card of the trading card game
+comes with another picture or frame: a copy of one of the disc's cards (not a
+piece of Exodia) with its own picture and, if you like, a frame of its own.
+When a duel's reward roll or the CPU's deal (if you let it) would give the base
+card, each variant of it takes its place by the chance you set. The list shows the
+mod's variants by their card; beside it the chosen one is drawn the way the game
+lays it out, the picture in its frame's window.
+
+**New variant...** asks for the card, the picture (a PNG; its middle is cut to
+the card's shape, as in the Art tab), the frame, the chance (0.1% to 100%) and a
+label (24 letters, shown under the card in the Library). The **frame** is the
+game's own, one of the presets (rainbow, gold and silver foil), a style the mod
+already has, or a PNG you draw ("A PNG of my own..."): draw it for a card 140
+units wide and 197 high, with the picture's window at x 3, y 19 and 134x123, a
+strip above it from y 3 for the name, and a band under it from y 146 for the
+stars, the element and ATK and DEF. The editor writes the variant's entry
+(`copy`, `id`, `variant_permille`, `variant_label`, `art`, `frame_style`), the
+picture in `art/`, the frame style in `card_layout` with its picture in
+`frames/` (and the parts the game places on it), and a "Special frames" setting
+of the mod (on from the start) that turns its frames on and off in the Mods
+window. It writes no `name`: the variant keeps its card's own name plate, in the
+game's lettering and in the language the player plays in. The mod needs mod API
+25, which the editor writes as `min_api`.
+
+A variant is its own card in a deck (a deck holds three of a card and its
+variants together) and in the chest; the Library shows a card and its variants
+as one entry, and steps through them with L1 and R1. See
+[Variants](../../../notes/more-cards.md#variants-alternate-versions-of-a-card)
+and [Layouts of several mods](../../../notes/modding.md#layouts-of-several-mods).
+Remove takes a variant out; the frame it used stays in the mod.
 
 ### Fusions
 
@@ -1915,6 +1949,7 @@ only the window; it does not rewrite the engine, whose rules are the port's
 | `pools.py`, `fixed_decks.py`, `bulk_fusions.py` | the port's pool arithmetic, fixed decks, bulk fusions |
 | `roster.py`, `portrait.py` | the duelists a mod adds or takes over (reading and writing their files, their places on the grid, checks), and Free Duel portraits: the disc's, and the one the game makes of a PNG |
 | `duelist_rules.py` | a duelist's `unlock`, `ai` and `ranks`: read as `duelists.c` reads them, written back in the shortest form, checked; how a manifest names a duelist (`reference`) |
+| `variants.py`, `frame_presets.py`, `frame_presets_data.py` | a card's variants made, changed and removed in a `Project` (the entry, the picture, the frame style and its picture, the mod's switch), the ready frames and the places a frame puts a card's parts on (`frame_presets_data.py` is made by `tools/pc/make_frame_presets.py`), and the card drawn as the game lays it out |
 | `art.py`, `campaign_map.py`, `map_art.py`, `map_view.py` | card art, the campaign map's table and pictures, the map drawn from the disc's 3D model (`map_view.py` has no Tk despite its name) |
 | `board_art.py`, `board_model.py` | the duel board's textures: where each is on the disc, a mod's replacements (pack entries) and tints (palette patches); the board drawn from the disc's 3D model with them (no Tk) |
 | `guardian_stars.py`, `star_rules.py` | a mod's `guardian_stars` (the stars, the matchup grid, presets, checks) and setting many cards' stars by a rule |
@@ -2170,7 +2205,7 @@ engine first):
 **The tests a front end keeps passing** (the command above): `test_data`
 (tables, the diff to `mod.json` and back, the pools' arithmetic, the
 checks), `test_family` and `test_importer` (imports), `test_ygomods`,
-`test_art`, `test_card_text`, `test_campaign_map`, `test_map_art` and
+`test_art`, `test_variants` (but its tab's test), `test_card_text`, `test_campaign_map`, `test_map_art` and
 `test_board_art` (but its page's tests) need no Tk. `test_bulk_fusions`, `test_fixed_decks` and `test_starter` test the
 engine and then the Tk dialogs, and `test_gui` and `test_map_gui` drive the
 window; those Tk parts skip where Tk cannot start. A new front end adds its

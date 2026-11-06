@@ -15,7 +15,7 @@ from .gamedata import (CARD_COUNT, DECK_COPY_LIMIT, DECK_POOL_MIN_CARDS, DECK_SI
                        POOL_LABELS, POOL_TOTAL, RITUAL_ORIGINS, RITUAL_TRIBUTE_MAX, TAG_LENGTH_MAX, TAGS_MAX, TYPE_MAGIC, TYPE_EQUIP, TYPE_LIMIT, TYPE_NAMES,
                        TYPE_RITUAL, exodia_piece)
 from . import art, board_art, campaign_map, card_text, fixed_decks, guardian_stars, packs as packmath, values
-from . import manifest, monster_effects, roster, starter_pools, tower, ui_rules
+from . import manifest, monster_effects, roster, starter_pools, tower, ui_rules, variants
 from .compat import HOST_API, external_packs
 from .model import KEY_RE, Project, duelist_named
 
@@ -116,6 +116,31 @@ def _check_info(project: Project, out: list):
             out.append(Issue("warning", "Mod info", key, f"\"{key}\" should be true or false"))
 
 
+def _check_variant(project: Project, cid: int, extra: dict, add):
+    # The keys of a variant (notes/more-cards.md, "Variants"), as cards.c reads them.
+    has_chance = "variant_permille" in extra
+    if not has_chance and "variant_label" not in extra:
+        return
+    if cid not in project.added:
+        add("warning", "\"variant_permille\" and \"variant_label\" belong to a copy; the game leaves them out of a replace")
+        return
+    if has_chance:
+        chance = extra["variant_permille"]
+        if not isinstance(chance, int) or isinstance(chance, bool) or not variants.PERMILLE_MIN <= chance <= variants.PERMILLE_MAX:
+            add("error", "\"variant_permille\" is the chance in thousandths, 1 to 1000 (50 is 5%)")
+        base = project.added[cid].base
+        if base in variants.EXODIA or not 1 <= base <= CARD_COUNT:
+            add("error", "a variant must copy a retail card that is not a piece of Exodia")
+        style = extra.get("frame_style")
+        if isinstance(style, str) and style and style not in variants.styles(project):
+            add("warning", f"its frame style \"{style}\" is not in this mod's card layout (another mod may have it)")
+    else:
+        add("warning", "\"variant_label\" needs \"variant_permille\"; the game leaves it out")
+    label = extra.get("variant_label")
+    if "variant_label" in extra and (not isinstance(label, str) or len(label.encode("utf-8")) > variants.LABEL_MAX):
+        add("warning", f"\"variant_label\" is text of {variants.LABEL_MAX} letters at most; the game cuts it")
+
+
 def _check_card(project: Project, cid: int, out: list):
     card = project.cards[cid]
     where = project.card_label(cid)
@@ -177,6 +202,7 @@ def _check_card(project: Project, cid: int, out: list):
 
 
     extra = project.added[cid].extra if cid in project.added else project.card_extra.get(cid, {})
+    _check_variant(project, cid, extra, add)
     threshold = extra.get("trap_threshold")
     if threshold is not None:
         if type(threshold) is not int or not 0 <= threshold <= 65535:

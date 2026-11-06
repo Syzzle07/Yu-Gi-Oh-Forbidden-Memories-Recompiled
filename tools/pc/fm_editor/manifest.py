@@ -137,7 +137,9 @@ def build_cards(project: Project) -> list:
         card = project.cards[cid]
         base = project.cards[added.base]
         entry = {"copy": added.base, "id": added.key}
-        fields = {"name": card.name}
+        # A variant still named as its base keeps the base's own name and plate in the game (the retail
+        # lettering, and a translation's name): an entry with a "name" would set it in Times instead.
+        fields = {} if "variant_permille" in added.extra and card.name == base.name else {"name": card.name}
         fields.update(_card_fields(card, base, project=project))     # what is left out is the base's, as the port has it
         if not card.is_monster() and card.type != base.type:
             effect = project.retail.cards.get(project.effect_of(cid))

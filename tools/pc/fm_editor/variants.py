@@ -1,0 +1,364 @@
+"""Variants: a card's alternate versions (notes/more-cards.md, "Variants").
+
+A variant is a copy of a retail card with a "variant_permille" (its chance, in
+thousandths, of being won in the card's place), its own picture and, when it
+has one, a frame of its own: a "frame_style" naming an entry of the mod's
+card_layout "frame_styles". This module is the engine of the Variants tab,
+with no Tk: it makes, changes and removes them in a Project, writing what the
+game reads (the card's entry, its picture, the frame style and its picture, the
+mod's "Special frames" switch) so the modder never has to.
+
+A frame is chosen as one of:
+    None                      no frame of its own: the game's
+    ("preset", name)          one of frame_presets.PRESETS
+    ("style", name)           a style the mod already has
+    ("png", bytes, stem)      a picture the modder drew, on the presets' places
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from . import art, frame_presets, pngio
+from .gamedata import CARD_COUNT
+from .model import KEY_RE
+
+EXODIA = (17, 18, 19, 20, 21)
+PERMILLE_MIN, PERMILLE_MAX = 1, 1000
+LABEL_MAX = 24
+KEY_MAX = 80
+SWITCH = "full_bleed"      # the setting that turns a layout mod's frames on (card_layout.c)
+FRAME_DIR = "frames"
+PRESET_PREFIX = "foil-"
+CUSTOM_PREFIX = "custom-"
+
+
+@dataclass
+class Variant:
+    cid: int
+    key: str
+    base: int
+    permille: int
+    label: str
+    frame_style: str
+    art: str
+
+
+def is_variant(project, cid: int) -> bool:
+    added = project.added.get(cid)
+    return added is not None and "variant_permille" in added.extra
+
+
+def read(project, cid: int) -> Variant:
+    added = project.added[cid]
+    extra = added.extra
+    permille = extra.get("variant_permille")
+    return Variant(cid, added.key, added.base,
+                   permille if isinstance(permille, int) and not isinstance(permille, bool) else 0,
+                   extra.get("variant_label") if isinstance(extra.get("variant_label"), str) else "",
+                   extra.get("frame_style") if isinstance(extra.get("frame_style"), str) else "",
+                   extra.get("art") if isinstance(extra.get("art"), str) else "")
+
+
+def variants(project) -> list:
+    """The mod's variants, by their base card and then as they were made."""
+    found = [read(project, cid) for cid in sorted(project.added) if is_variant(project, cid)]
+    return sorted(found, key=lambda v: (v.base, v.cid))
+
+
+def family(project, base: int) -> list:
+    return [v for v in variants(project) if v.base == base]
+
+
+# --- chance ----------------------------------------------------------------------------
+
+def percent_text(permille: int) -> str:
+    """50 as "5%", 25 as "2.5%"."""
+    return f"{permille / 10:g}%"
+
+
+def parse_percent(text: str):
+    """The chance in thousandths the text names ("5", "2.5%", "0,5"), None for none or out of range."""
+    text = text.strip().rstrip("%").strip().replace(",", ".")
+    try:
+        value = round(float(text) * 10)
+    except ValueError:
+        return None
+    return value if PERMILLE_MIN <= value <= PERMILLE_MAX else None
+
+
+# --- keys ---------------------------------------------------------------------------------
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "card"
+
+
+def suggest_key(project, base: int) -> str:
+    """A key for a new variant of `base`: its name and "-alt-N", unused."""
+    taken = {added.key for added in project.added.values()}
+    stem = slug(project.cards[base].name)[:KEY_MAX - 12].strip("-") or "card"
+    n = 1
+    while f"{stem}-alt-{n}" in taken:
+        n += 1
+    return f"{stem}-alt-{n}"
+
+
+# --- checks --------------------------------------------------------------------------------
+
+def check_base(base: int):
+    if not isinstance(base, int) or not 1 <= base <= CARD_COUNT:
+        raise ValueError("a variant is a version of a card of the disc (1 to 722)")
+    if base in EXODIA:
+        raise ValueError("a piece of Exodia has no variants: a copy of it would not complete Exodia")
+
+
+def check_chance(permille):
+    if not isinstance(permille, int) or isinstance(permille, bool) or not PERMILLE_MIN <= permille <= PERMILLE_MAX:
+        raise ValueError("the chance is 0.1% to 100%")
+
+
+def check_label(label: str):
+    if len(label.encode("utf-8")) > LABEL_MAX:
+        raise ValueError(f"the label is {LABEL_MAX} letters at most")
+
+
+# --- the mod's layout --------------------------------------------------------------------
+
+def _object(project, *path) -> dict:
+    at = project.other
+    for key in path:
+        if not isinstance(at.get(key), dict):
+            at[key] = {}
+        at = at[key]
+    return at
+
+
+def styles(project) -> dict:
+    value = project.other.get("card_layout")
+    value = value.get("frame_styles") if isinstance(value, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def _held(project, name: str):
+    """A file of the mod, from what the editor holds or the mod's folder."""
+    if name in project.files:
+        return project.files[name]
+    if project.source_dir:
+        path = Path(project.source_dir) / name
+        if path.is_file():
+            try:
+                return path.read_bytes()
+            except OSError:
+                return None
+    return None
+
+
+def _free_file(project, stem: str, data: bytes) -> str:
+    """frames/<stem>.png, or the next free name when that holds another picture."""
+    name, n = f"{FRAME_DIR}/{stem}.png", 2
+    while _held(project, name) not in (None, data):
+        name = f"{FRAME_DIR}/{stem}-{n}.png"
+        n += 1
+    return name
+
+
+def ensure_switch(project):
+    """The mod's "Special frames" setting, on from the start: a layout mod's frames are drawn while it is on."""
+    for spec in project.info.settings:
+        if isinstance(spec, dict) and spec.get("key") == SWITCH:
+            return
+    project.info.settings.append({
+        "key": SWITCH, "label": "VARIANTS  |  Special frames", "type": "bool", "default": 1,
+        "description": "Draws a variant that has a frame of its own in that frame. Other cards keep the "
+                       "frames of the game or of your other frame pack."})
+
+
+def frame_choices(project) -> list:
+    """(text, choice) for each frame the tab offers: none, the presets, the mod's own styles."""
+    out = [("The game's frame", None)]
+    out += [(frame_presets.label(name), ("preset", name)) for name in frame_presets.PRESETS]
+    made = {PRESET_PREFIX + name for name in frame_presets.PRESETS}
+    for name in styles(project):
+        if name not in made:             # a preset's own style is the preset
+            out.append((f"This mod's \"{name}\"", ("style", name)))
+    return out
+
+
+def _use_preset(project, name: str) -> str:
+    style_name = PRESET_PREFIX + name
+    entries = _object(project, "card_layout", "frame_styles")
+    if style_name not in entries:
+        data = frame_presets.png(name)
+        file = _free_file(project, style_name, data)
+        project.files[file] = data
+        entries[style_name] = frame_presets.style(file, frame_presets.PRESETS[name][1])
+    return style_name
+
+
+def _use_png(project, data: bytes, stem: str) -> str:
+    try:
+        image = pngio.decode(data)
+    except (pngio.PngError, ValueError) as problem:
+        raise ValueError(f"that is not a PNG the editor can read: {problem}")
+    if image.width > 1024 or image.height > 2048:
+        raise ValueError("a frame is 1024x2048 at most")
+    stem_name = CUSTOM_PREFIX + slug(stem)[:40]
+    entries = _object(project, "card_layout", "frame_styles")
+    file = _free_file(project, stem_name, data)
+    project.files[file] = data
+    style_name, n = stem_name, 2
+    while style_name in entries and entries[style_name].get("image") != file:   # another picture's style
+        style_name = f"{stem_name}-{n}"
+        n += 1
+    entries.setdefault(style_name, frame_presets.style(file))
+    return style_name
+
+
+def set_frame(project, cid: int, choice):
+    """Give the variant the frame `choice` (see the top); None takes its own frame away."""
+    extra = project.added[cid].extra
+    if choice is None:
+        extra.pop("frame_style", None)
+        return
+    kind = choice[0]
+    if kind == "preset":
+        if choice[1] not in frame_presets.PRESETS:
+            raise ValueError(f"no frame preset named {choice[1]!r}")
+        name = _use_preset(project, choice[1])
+    elif kind == "style":
+        if choice[1] not in styles(project):
+            raise ValueError(f"the mod has no frame style named {choice[1]!r}")
+        name = choice[1]
+    elif kind == "png":
+        name = _use_png(project, choice[1], choice[2])
+    else:
+        raise ValueError(f"unknown frame choice {kind!r}")
+    extra["frame_style"] = name
+    ensure_switch(project)
+
+
+def frame_of(project, cid: int):
+    """The choice that gives the variant its frame now, as set_frame takes it."""
+    name = project.added[cid].extra.get("frame_style")
+    if not isinstance(name, str) or not name:
+        return None
+    for preset in frame_presets.PRESETS:
+        if name == PRESET_PREFIX + preset:
+            return ("preset", preset)
+    return ("style", name)
+
+
+def frame_picture(project, cid: int):
+    """The pngio.Image of the variant's frame, or None (no frame of its own, or a picture not found)."""
+    name = project.added[cid].extra.get("frame_style")
+    entry = styles(project).get(name) if isinstance(name, str) else None
+    file = entry.get("image") if isinstance(entry, dict) else None
+    data = _held(project, file) if isinstance(file, str) else None
+    if data is None:
+        return None
+    try:
+        return pngio.decode(data)
+    except (pngio.PngError, ValueError):
+        return None
+
+
+# --- making, changing and removing -----------------------------------------------------
+
+def add_variant(project, base: int, image=None, frame=None, permille: int = 50, label: str = "",
+                key: str = None):
+    """A new variant of retail card `base`: (its id, notes on its picture). `image` is a pngio.Image."""
+    check_base(base)
+    check_chance(permille)
+    check_label(label)
+    if key is not None and (len(key) > KEY_MAX or not KEY_RE.match(key) or
+                            any(a.key == key for a in project.added.values())):
+        raise ValueError("the key is letters, digits, - and _ (80 at most), and no other card of the mod has it")
+    cid = project.add_card(base, key or suggest_key(project, base))
+    extra = project.added[cid].extra
+    extra["variant_permille"] = permille
+    if label:
+        extra["variant_label"] = label
+    notes = []
+    try:
+        if image is not None:
+            notes = art.set_image(project, cid, "art", image)
+        set_frame(project, cid, frame)
+    except ValueError:
+        project.remove_card(cid)
+        raise
+    return cid, notes
+
+
+def set_chance(project, cid: int, permille: int):
+    check_chance(permille)
+    project.added[cid].extra["variant_permille"] = permille
+
+
+def set_label(project, cid: int, label: str):
+    check_label(label)
+    extra = project.added[cid].extra
+    if label:
+        extra["variant_label"] = label
+    else:
+        extra.pop("variant_label", None)
+
+
+def set_art(project, cid: int, image) -> list:
+    return art.set_image(project, cid, "art", image)
+
+
+def remove_variant(project, cid: int):
+    if not is_variant(project, cid):
+        raise ValueError("not a variant")
+    project.remove_card(cid)
+
+
+def unused_styles(project) -> list:
+    """The frame styles no card of the mod names (a preset taken from the last variant that used it)."""
+    used = {a.extra.get("frame_style") for a in project.added.values()}
+    used |= {e.get("frame_style") for e in project.card_extra.values() if isinstance(e, dict)}
+    return [name for name in styles(project) if name not in used]
+
+
+# --- the picture of the card -----------------------------------------------------------
+
+def over(base: pngio.Image, top: pngio.Image, left: int = 0, top_edge: int = 0) -> pngio.Image:
+    """`top` laid over `base` at (left, top_edge), by its alpha: a new Image the size of `base`."""
+    out = bytearray(base.rgba)
+    for y in range(top.height):
+        by = y + top_edge
+        if not 0 <= by < base.height:
+            continue
+        for x in range(top.width):
+            bx = x + left
+            if not 0 <= bx < base.width:
+                continue
+            at, to = (y * top.width + x) * 4, (by * base.width + bx) * 4
+            a = top.rgba[at + 3]
+            if a == 0:
+                continue
+            if a == 255:
+                out[to:to + 3] = top.rgba[at:at + 3]
+            else:
+                for c in range(3):
+                    out[to + c] = (top.rgba[at + c] * a + out[to + c] * (255 - a)) // 255
+            out[to + 3] = 255
+    return pngio.Image(base.width, base.height, bytes(out))
+
+
+def card_picture(art_image, frame_image, width: int = 140) -> pngio.Image:
+    """The card as its frame lays out its picture (the places in frame_presets.WINDOW): the
+    picture cut to the window and the frame over it, `width` pixels across. Either may be None."""
+    scale = width / frame_presets.FRAME_W
+    height = round(frame_presets.FRAME_H * scale)
+    canvas = pngio.Image(width, height, bytes((0x20, 0x20, 0x28, 255)) * (width * height))
+    window = frame_presets.WINDOW
+    if art_image is not None:
+        w, h = round(window["width"] * scale), round(window["height"] * scale)
+        left, top, cw, ch = pngio.middle(art_image, w, h)
+        picture = pngio.resample(art_image, w, h, (left, top, cw, ch))
+        canvas = over(canvas, picture, round(window["x"] * scale), round(window["y"] * scale))
+    if frame_image is not None:
+        canvas = over(canvas, pngio.scale_to(frame_image, width, height))
+    return canvas
