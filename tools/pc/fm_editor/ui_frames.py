@@ -14,8 +14,8 @@ import shutil
 import subprocess
 
 from . import art, card_icons, card_text, compat, manifest, packs, pngio, ttf, ui_assets
-from .ui_tab import (FRAME_IMAGE_DIR, GAME_H, GAME_W, ElementList, StageView, as_int, ensure, import_image,
-                     mod_image, section, set_member, sized)
+from .ui_tab import (FRAME_IMAGE_DIR, GAME_H, GAME_W, ColorButton, ElementList, StageView, as_int, ensure,
+                     import_image, mod_image, section, set_member, sized)
 from .widgets import CardField, px
 from .gamedata import TYPE_NAMES
 
@@ -76,6 +76,37 @@ IMAGE_PARTS = {"digits", "atk_label", "dfd_label", "magic_label", "trap_label", 
 MOVABLE = {"title", "art", "stars", "attribute", "spell_icon", "atk", "def", "atk_label", "dfd_label",
            "magic_label", "trap_label", "ritual_label", "equip_label", "hand_art", "hand_atk", "hand_def",
            "hand_atk_label", "hand_dfd_label"}
+# The parts the game lets a "color" tint (card_layout.c: title, stars, attribute and the digits). 0x80 in each
+# channel is the picture as it is: less darkens it, more brightens it, up to twice.
+TINTABLE = {"title", "stars", "attribute", "spell_icon", "atk", "def"}
+NEUTRAL_TINT = 0x808080
+
+
+def tint_value(color) -> int:
+    '''A part's "color" ({"r", "g", "b"}) as 0xRRGGBB; neutral where it has none.'''
+    if not isinstance(color, dict):
+        return NEUTRAL_TINT
+    channels = [as_int(color.get(name), 0x80) for name in ("r", "g", "b")]
+    return (max(0, min(255, channels[0])) << 16) | (max(0, min(255, channels[1])) << 8) | max(0, min(255, channels[2]))
+
+
+def tinted(image, value):
+    '''`image` as the game draws it with a tint (card_layout.c's "color"): each channel times value/128, to 255.'''
+    if image is None or value == NEUTRAL_TINT:
+        return image
+    factors = ((value >> 16) & 255, (value >> 8) & 255, value & 255)
+    out = bytearray(image.rgba)
+    for at in range(0, len(out), 4):
+        for c in range(3):
+            out[at + c] = min(255, out[at + c] * factors[c] // 128)
+    return pngio.Image(image.width, image.height, bytes(out))
+
+
+def tint_color(value):
+    '''The tint as the colour of a white thing drawn with it: "#rrggbb".'''
+    return "#%02x%02x%02x" % tuple(min(255, ((value >> s) & 255) * 255 // 128) for s in (16, 8, 0))
+
+
 CAPTION_KEYS = ("magic_label", "trap_label", "ritual_label", "equip_label")
 # The monster card's ATK and DFD captions.  With a picture they are drawn by
 # the game at the style's x/y (a style's own frame, or retail's: the picture
@@ -288,8 +319,13 @@ def hand_sprite(wa, u, v, width=8, height=8):
 
 
 class FramesPage(ttk.Frame):
-    def __init__(self, master, tab):
+    '''`locked` ({"style": name, "card": id}) pins the page to one style and one card, for a window of
+    its own that designs a single card (the Variants tab): the list of styles and the ways of applying
+    one to many cards are not shown, and no style becomes the layout's default.'''
+
+    def __init__(self, master, tab, locked=None):
         super().__init__(master)
+        self.locked = locked
         self.tab, self.chosen, self.loading = tab, "frame", False
         self.list_chosen, self.preview_template = "frame", "main"
         self.style_name = tk.StringVar(value="custom")
@@ -404,10 +440,20 @@ class FramesPage(ttk.Frame):
         self.hidden = tk.BooleanVar()
         self.hide = ttk.Checkbutton(form, text="Hidden", variable=self.hidden, command=self.set_hidden)
         self.hide.grid(row=7, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(form, text="Tint").grid(row=8, column=0, sticky="w", padx=(0, 8), pady=(6, 2))
+        self.tint_label = form.grid_slaves(row=8, column=0)[0]
+        self.tint = ColorButton(form, self.set_tint, default=NEUTRAL_TINT)
+        self.tint.grid(row=8, column=1, sticky="w", pady=(6, 2))
         self.restore = ttk.Button(form, text="Back to the game's", command=self.reset)
-        self.restore.grid(row=8, column=1, sticky="w", pady=(10, 0))
+        self.restore.grid(row=9, column=1, sticky="w", pady=(10, 0))
         self.note = ttk.Label(self.side, style="Hint.TLabel", wraplength=px(self, 440), justify="left")
         self.note.grid(row=5, column=0, sticky="w", pady=(8, 0))
+        if locked is not None:
+            left.grid_remove()
+            self.revert_page.pack_forget()
+            self.style_name.set(locked["style"])
+            self.card.set(locked["card"])
+            self.card.entry.configure(state="disabled")
 
     @property
     def project(self): return self.tab.project
@@ -445,7 +491,7 @@ class FramesPage(ttk.Frame):
             value = styles.setdefault(self.style_name.get(), {"hand_color": "gold"})
             # A first style should be usable immediately.  More styles can
             # still be assigned per card/type in the Cards tab or mod.json.
-            if made and len(styles) == 1:
+            if made and len(styles) == 1 and self.locked is None:
                 ensure(self.project, "card_layout").setdefault("default_style", self.style_name.get())
                 self.declare_switch()       # a layout's first style, made now
             return value
@@ -701,6 +747,9 @@ class FramesPage(ttk.Frame):
             parts += [("spell_icon", "#ffe171", ""), (caption, "#111111", CAPTION_TEXT[caption])]
         for key, color, text in parts:
             part = self.part(key)
+            tint = tint_value(part.get("color")) if key in TINTABLE else NEUTRAL_TINT
+            if key == "title":
+                color = tint_color(tint)
             x, y, w, h = self.rect(key)
             digit_w, digit_h = w, h
             if key in ("atk", "def"):
@@ -738,11 +787,11 @@ class FramesPage(ttk.Frame):
             elif key == "art": stage.rectangle(key, x, y, w, h, fill=color, outline="#b9c7da", drag=True)
             elif key == "stars" and star_icon:
                 for n in range(12):
-                    stage.picture((key, n), star_icon, x - n * 9, y, drag=False,
+                    stage.picture((key, n), tinted(star_icon, tint), x - n * 9, y, drag=False,
                                   box=(x - n * 9, y, 9, 9), high_quality=True)
                 stage.boxes[key] = (x - 99, y, 108, 9); stage.draggable.add(key)
             elif key in ("attribute", "spell_icon") and attr_icon:
-                stage.picture(key, attr_icon, x, y, box=(x, y, w, h), high_quality=True)
+                stage.picture(key, tinted(attr_icon, tint), x, y, box=(x, y, w, h), high_quality=True)
             elif key in CAPTION_KEYS and retail_caption:
                 # No style image means the game keeps its own compact
                 # caption sprite.  Showing that exact asset matters here:
@@ -752,7 +801,7 @@ class FramesPage(ttk.Frame):
             elif key in ("atk", "def") and digits_image:
                 step = as_int(self.part("digits").get("step"), digit_w)
                 for n, char in enumerate(text):
-                    image = digit_cell(digits_image, int(char))
+                    image = tinted(digit_cell(digits_image, int(char)), tint)
                     if image:
                         dx = x + n * step
                         stage.picture((key, n), image, dx, y, drag=False,
@@ -854,12 +903,21 @@ class FramesPage(ttk.Frame):
                 (widget.grid if visible else widget.grid_remove)()
         self.hidden.set(self.part(key).get("hide") is True)
         self.hide.state(["!disabled"] if spec[4] else ["disabled"])
+        for widget in (self.tint_label, self.tint):
+            (widget.grid if key in TINTABLE else widget.grid_remove)()
+        if key in TINTABLE:
+            self.tint.set(tint_value(self.part(key).get("color")))
         image = self.asset(key); self.image_name.configure(text=image or "the game's artwork")
         editable_image = key in DIRECT_ASSETS or key in IMAGE_PARTS
         self.choose.state(["!disabled"] if editable_image else ["disabled"])
         self.remove.state(["!disabled"] if image and editable_image else ["disabled"])
         self.restore.state(["!disabled"])
-        self.note.configure(text="Assets are saved in frames/. The first style becomes the layout's default and declares the mod's “full_bleed” setting, on by default (Mod info): untick it in the Mods window to see the game's own frame. The front preview is a game-scale card viewer; hand, field and Library assets are selectable here but belong to their own game screens.")
+        if self.locked is not None:
+            self.note.configure(text="This card's own design. Pictures are saved in frames/. It is drawn while the mod's "
+                                     "\"Special frames\" setting is on. The front preview is a game-scale card viewer; "
+                                     "hand, field and Library pictures belong to their own game screens.")
+        else:
+            self.note.configure(text="Assets are saved in frames/. The first style becomes the layout's default and declares the mod's “full_bleed” setting, on by default (Mod info): untick it in the Mods window to see the game's own frame. The front preview is a game-scale card viewer; hand, field and Library assets are selectable here but belong to their own game screens.")
         self.loading = False
 
     def typed(self, name):
@@ -892,6 +950,14 @@ class FramesPage(ttk.Frame):
 
     def set_hidden(self):
         if not self.loading and SPECS[self.chosen][4]: set_member(self.part(self.chosen, True), "hide", self.hidden.get(), None); self.done()
+
+    def set_tint(self, value):
+        '''The chosen part's tint (the swatch, and tests): 0xRRGGBB, neutral for the picture as it is.'''
+        if self.loading or self.project is None or self.chosen not in TINTABLE: return
+        part = self.part(self.chosen, True)
+        if value is None or value == NEUTRAL_TINT: part.pop("color", None)
+        else: part["color"] = {"r": (value >> 16) & 255, "g": (value >> 8) & 255, "b": value & 255}
+        self.done()
 
     def reset(self):
         key = self.chosen; path = SPECS[key][2]

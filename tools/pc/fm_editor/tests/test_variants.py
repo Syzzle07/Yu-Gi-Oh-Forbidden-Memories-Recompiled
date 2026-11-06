@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from fm_editor import compat, frame_presets, manifest, pngio, validate, variants
+from fm_editor import compat, frame_presets, manifest, pngio, ui_frames, validate, variants
 from fm_editor.model import Project
 from fm_editor.pngio import Image
 from fm_editor.tests.test_data import fixture
@@ -218,6 +218,51 @@ class VariantsTest(unittest.TestCase):
         project.card_extra[5] = {"variant_permille": 50}
         self.assertTrue(any("replace" in i.message for i in validate.validate(project)))
 
+    def test_a_variants_own_design(self):
+        project = self.project
+        a, _ = variants.add_variant(project, 1, None, ("preset", "gold"), 50, "A", key="a")
+        b, _ = variants.add_variant(project, 35, None, ("preset", "gold"), 50, "B", key="b")
+        name = variants.own_design(project, a)
+        self.assertEqual(name, "v-a")
+        self.assertTrue(variants.has_own_design(project, a))
+        self.assertFalse(variants.has_own_design(project, b))
+        entries = project.other["card_layout"]["frame_styles"]
+        self.assertEqual(entries["v-a"], entries["foil-gold"])           # made as a copy of what it had
+        self.assertIsNot(entries["v-a"], entries["foil-gold"])
+        entries["v-a"]["art"]["width"] = 100                              # its own: the preset is not changed
+        self.assertEqual(entries["foil-gold"]["art"]["width"], 134)
+        self.assertEqual(project.added[b].extra["frame_style"], "foil-gold")
+        self.assertEqual(variants.own_design(project, a), "v-a")          # again: the same, not a second copy
+        self.assertEqual(sorted(entries), ["foil-gold", "v-a"])
+        # No rule of the layout, and no default for all cards, is made.
+        self.assertEqual(sorted(project.other["card_layout"]), ["frame_styles"])
+        # Where its picture goes, as the style says.
+        self.assertEqual(variants.window_of_style(project, "v-a")["width"], 100)
+        self.assertEqual(variants.window_of_style(project, "foil-gold"), frame_presets.WINDOW)
+        self.assertEqual(variants.window_of_style(project, "nothing"), frame_presets.WINDOW)
+        self.assertEqual(variants.window_of_choice(project, ("style", "v-a"))["width"], 100)
+        self.assertEqual(variants.window_of_choice(project, ("preset", "gold")), frame_presets.WINDOW)
+        # With no frame of its own it starts as the game's layout.
+        c, _ = variants.add_variant(project, 2, None, None, 50, "", key="c")
+        variants.own_design(project, c)
+        self.assertEqual(entries["v-c"], {"hand_color": "gold"})
+        self.assertEqual(variants.frame_of(project, c), ("style", "v-c"))
+        # Taking it away leaves no frame, and the style that was its alone.
+        variants.remove_own_design(project, a)
+        self.assertNotIn("v-a", entries)
+        self.assertNotIn("frame_style", project.added[a].extra)
+        self.assertFalse(variants.has_own_design(project, a))
+        # A long key still names a style the game accepts (31 letters at most).
+        long_key = "k" * 70
+        d, _ = variants.add_variant(project, 3, None, None, 50, "", key=long_key)
+        self.assertLessEqual(len(variants.own_design(project, d)), 31)
+        # Saved and read back, the design is what the mod holds.
+        folder = self.root / "design"
+        manifest.save_mod(project, folder)
+        again, _ = manifest.open_mod(self.game, folder)
+        self.assertIn("v-c", variants.styles(again))
+        self.assertEqual(errors(again), [])
+
     def test_the_picture_of_a_card(self):
         art_image = picture(204, 192, (200, 30, 30, 255))
         frame = picture(256, 512, (0, 0, 0, 0))
@@ -298,6 +343,83 @@ class VariantsTabTest(GuiCase):
         with self.assertRaises(ValueError):
             tab.make(cid, None, None, 50, "")
         self.assertEqual(len(project.added), 1)
+
+    def test_designing_a_card(self):
+        tab, project = self.app.variants, self.app.project
+        cid = tab.make(1, picture(204, 192, (200, 30, 30, 255)), ("preset", "silver"), 50, "Mine")
+        name = variants.design_name(project.added[cid].key)
+        other = tab.make(35, None, ("preset", "silver"), 50, "Other")
+        tab.show(cid)
+        self.assertFalse(tab.undesign_button.instate(["!disabled"]))
+        window = tab.design()
+        self.app.update()
+        self.assertIsNotNone(window)
+        self.assertEqual(project.added[cid].extra["frame_style"], name)
+        entries = project.other["card_layout"]["frame_styles"]
+        self.assertIn(name, entries)
+        page = window.page
+        self.assertEqual((page.style_name.get(), page.card.get()), (name, cid))
+        before = {k: v for k, v in entries["foil-silver"].items()}
+        # A part moved and resized through the fields, as a person types them.
+        page.select("art")
+        for field, value in (("x", "10"), ("y", "24"), ("width", "120"), ("height", "110")):
+            page.vars[field].set(value)
+            page.typed(field)
+        self.assertEqual(entries[name]["art"], {"x": 10, "y": 24, "width": 120, "height": 110})
+        page.select("stars")
+        page.hidden.set(True)
+        page.set_hidden()
+        self.assertIs(entries[name]["stars"]["hide"], True)
+        page.select("atk")
+        page.vars["x"].set("60")
+        page.typed("x")
+        self.assertEqual(entries[name]["digits"]["atk"]["x"], 60)
+        # A tint: black stars, and the neutral tint is no tint.
+        page.select("stars")
+        page.set_tint(0x000000)
+        self.assertEqual(entries[name]["stars"]["color"], {"r": 0, "g": 0, "b": 0})
+        self.assertEqual(ui_frames.tint_value(entries[name]["stars"]["color"]), 0)
+        page.set_tint(0x808080)
+        self.assertNotIn("color", entries[name]["stars"])
+        page.set_tint(0xC08040)
+        self.assertEqual(entries[name]["stars"]["color"], {"r": 0xC0, "g": 0x80, "b": 0x40})
+        self.assertEqual(ui_frames.tint_value({"r": 300, "g": "x", "b": -4}), 0xFF8000)
+        self.assertEqual(ui_frames.tint_value(None), 0x808080)
+        # The preview draws a tint as the game does: a channel times value/128.
+        one = pngio.Image(1, 1, bytes((200, 100, 50, 255)))
+        self.assertIs(ui_frames.tinted(one, 0x808080), one)
+        self.assertEqual(tuple(ui_frames.tinted(one, 0x000000).rgba), (0, 0, 0, 255))
+        self.assertEqual(tuple(ui_frames.tinted(one, 0x408000).rgba), (100, 100, 0, 255))
+        self.assertEqual(tuple(ui_frames.tinted(one, 0xFF8080).rgba), (255, 100, 50, 255))
+        self.assertEqual((ui_frames.tint_color(0x808080), ui_frames.tint_color(0x000000)), ("#ffffff", "#000000"))
+        self.assertIsNone(ui_frames.tinted(None, 0))
+        page.select("art")                       # the picture takes none: no tint to set
+        page.set_tint(0x000000)
+        self.assertNotIn("color", entries[name]["art"])
+        # Only this card's own style changed: no one else's, and nothing for all cards.
+        self.assertEqual(entries["foil-silver"], before)
+        self.assertEqual(project.added[other].extra["frame_style"], "foil-silver")
+        layout = project.other["card_layout"]
+        for key in ("default_style", "frame_for", "default_styles"):
+            self.assertNotIn(key, layout)
+        self.assertEqual(variants.window_of_style(project, name)["width"], 120)
+        # Closing hands the card back to the tab, which draws it with its own picture window.
+        window.close()
+        self.app.update()
+        self.assertEqual(tab.current, cid)
+        self.assertTrue(tab.undesign_button.instate(["!disabled"]))
+        self.assertEqual(tab.frames.var.get(), f"This mod's \"{name}\"")
+        # A name plate of its own.
+        plate = Path(self.tmp.name) / "plate.png"
+        pngio.write(plate, picture(192, 28, (255, 255, 255, 255)))
+        self.assertTrue(tab.use_plate(plate))
+        self.assertTrue(project.added[cid].extra["title"].startswith("art/"))
+        # The design taken away.
+        with mock.patch("fm_editor.variants_tab.messagebox.askyesno", return_value=True):
+            tab.remove_design()
+        self.assertNotIn(name, project.other["card_layout"]["frame_styles"])
+        self.assertNotIn("frame_style", project.added[cid].extra)
+        self.assertFalse(tab.undesign_button.instate(["!disabled"]))
 
     def test_a_mod_read_back_shows_its_variants(self):
         tab, project = self.app.variants, self.app.project

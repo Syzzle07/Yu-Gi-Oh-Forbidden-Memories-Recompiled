@@ -16,6 +16,7 @@ A frame is chosen as one of:
 """
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,8 @@ SWITCH = "full_bleed"      # the setting that turns a layout mod's frames on (ca
 FRAME_DIR = "frames"
 PRESET_PREFIX = "foil-"
 CUSTOM_PREFIX = "custom-"
+DESIGN_PREFIX = "v-"       # a variant's own design: v-<its key>
+STYLE_NAME_MAX = 31        # the game's longest frame style name
 
 
 @dataclass
@@ -238,6 +241,64 @@ def set_frame(project, cid: int, choice):
     ensure_switch(project)
 
 
+# --- a variant's own design ------------------------------------------------------------
+
+def design_name(key: str) -> str:
+    '''The frame style that is one variant's alone.'''
+    return (DESIGN_PREFIX + slug(key))[:STYLE_NAME_MAX].rstrip("-")
+
+
+def has_own_design(project, cid: int) -> bool:
+    added = project.added[cid]
+    name = design_name(added.key)
+    return added.extra.get("frame_style") == name and name in styles(project)
+
+
+def own_design(project, cid: int) -> str:
+    '''The name of the variant's own frame style, made the first time as a copy of the one it has
+    (a preset's, a style of the mod's, or none: the game's own layout), and given to the variant. It is
+    what the designer window edits: no other card's style, and no rule of the layout, is touched.'''
+    added = project.added[cid]
+    name = design_name(added.key)
+    entries = _object(project, "card_layout", "frame_styles")
+    if name not in entries:
+        current = added.extra.get("frame_style")
+        source = entries.get(current) if isinstance(current, str) else None
+        entries[name] = copy.deepcopy(source) if isinstance(source, dict) else {"hand_color": "gold"}
+    added.extra["frame_style"] = name
+    ensure_switch(project)
+    return name
+
+
+def remove_own_design(project, cid: int):
+    '''Take the variant's own design away: it has no frame of its own again.'''
+    added = project.added[cid]
+    name = design_name(added.key)
+    if added.extra.get("frame_style") == name:
+        del added.extra["frame_style"]
+    entries = styles(project)
+    if name in entries and not any(a.extra.get("frame_style") == name for a in project.added.values()):
+        del entries[name]
+
+
+def window_of_style(project, name) -> dict:
+    '''The picture's window of a frame style: its "art" part where it has one, else the presets'.'''
+    entry = styles(project).get(name) if isinstance(name, str) else None
+    part = entry.get("art") if isinstance(entry, dict) else None
+    window = dict(frame_presets.WINDOW)
+    if isinstance(part, dict):
+        for key in window:
+            if isinstance(part.get(key), int) and not isinstance(part.get(key), bool):
+                window[key] = part[key]
+    return window
+
+
+def window_of_choice(project, choice) -> dict:
+    if choice is not None and choice[0] == "style":
+        return window_of_style(project, choice[1])
+    return dict(frame_presets.WINDOW)
+
+
 def frame_of(project, cid: int):
     """The choice that gives the variant its frame now, as set_frame takes it."""
     name = project.added[cid].extra.get("frame_style")
@@ -347,13 +408,13 @@ def over(base: pngio.Image, top: pngio.Image, left: int = 0, top_edge: int = 0) 
     return pngio.Image(base.width, base.height, bytes(out))
 
 
-def card_picture(art_image, frame_image, width: int = 140) -> pngio.Image:
+def card_picture(art_image, frame_image, width: int = 140, window: dict = None) -> pngio.Image:
     """The card as its frame lays out its picture (the places in frame_presets.WINDOW): the
     picture cut to the window and the frame over it, `width` pixels across. Either may be None."""
     scale = width / frame_presets.FRAME_W
     height = round(frame_presets.FRAME_H * scale)
     canvas = pngio.Image(width, height, bytes((0x20, 0x20, 0x28, 255)) * (width * height))
-    window = frame_presets.WINDOW
+    window = window or frame_presets.WINDOW     # the frame's units: the picture's x, y, width and height
     if art_image is not None:
         w, h = round(window["width"] * scale), round(window["height"] * scale)
         left, top, cw, ch = pngio.middle(art_image, w, h)

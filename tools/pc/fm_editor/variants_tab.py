@@ -15,6 +15,7 @@ from tkinter import messagebox, ttk
 
 from . import art, file_dialogs, frame_presets, pngio, variants
 from .tabs import Tab
+from .variants_design import DesignWindow
 from .widgets import CardField, FormDialog, WrapLabel, px, scrolled_tree
 
 PREVIEW_W = 210          # the preview card's width at 96 dpi: 1.5x the 140 units of a card
@@ -115,7 +116,7 @@ class VariantsTab(Tab):
             "A variant is another version of a card, as in the trading card game: its own picture and, if you like, "
             "a frame of its own. When a duel would give the card, a variant is given instead by the chance you set "
             "(5% is one drop in twenty). A deck holds three of a card and its variants together, and the Library "
-            "shows them as one entry. Needs game version 25 of the mod API (the editor writes min_api itself).")
+            "shows them as one entry. Needs mod API 25 (the editor writes min_api itself).")
         ).pack(fill="x")
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True, pady=(6, 0))
@@ -134,7 +135,7 @@ class VariantsTab(Tab):
         right = ttk.LabelFrame(body, text="The chosen variant", padding=8)
         right.pack(side="left", fill="both", expand=True, padx=(8, 0))
         self.preview = ttk.Label(right)
-        self.preview.grid(row=0, column=0, rowspan=6, sticky="n", padx=(0, 12))
+        self.preview.grid(row=0, column=0, rowspan=7, sticky="n", padx=(0, 12))
         self.title = ttk.Label(right, text="Choose a variant, or make one.")
         self.title.grid(row=0, column=1, columnspan=2, sticky="w")
         self.label = tk.StringVar()
@@ -146,12 +147,22 @@ class VariantsTab(Tab):
         ttk.Label(right, text="Frame").grid(row=3, column=1, sticky="w", pady=(4, 0))
         self.frames = FrameChooser(right, lambda: self.project, self.preview_changed)
         self.frames.box.grid(row=3, column=2, sticky="w", padx=4, pady=(4, 0))
-        self.picture_button = ttk.Button(right, text="Choose a picture...", command=self.choose_picture)
-        self.picture_button.grid(row=4, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        pictures = ttk.Frame(right)
+        pictures.grid(row=4, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        self.picture_button = ttk.Button(pictures, text="Choose a picture...", command=self.choose_picture)
+        self.picture_button.pack(side="left")
+        self.plate_button = ttk.Button(pictures, text="Name plate...", command=self.choose_plate)
+        self.plate_button.pack(side="left", padx=(4, 0))
+        design = ttk.Frame(right)
+        design.grid(row=5, column=1, columnspan=2, sticky="w", pady=(6, 0))
+        self.design_button = ttk.Button(design, text="Design the card...", command=self.design)
+        self.design_button.pack(side="left")
+        self.undesign_button = ttk.Button(design, text="Remove the design", command=self.remove_design)
+        self.undesign_button.pack(side="left", padx=(4, 0))
         self.apply_button = ttk.Button(right, text="Apply", command=self.apply)
-        self.apply_button.grid(row=5, column=1, sticky="w", pady=(8, 0))
+        self.apply_button.grid(row=6, column=1, sticky="w", pady=(10, 0))
         self.status = ttk.Label(right, style="Hint.TLabel", wraplength=px(self, 360), justify="left")
-        self.status.grid(row=6, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.status.grid(row=7, column=0, columnspan=3, sticky="w", pady=(8, 0))
         self.show(None)
 
     # --- the list -------------------------------------------------------------------------
@@ -193,8 +204,11 @@ class VariantsTab(Tab):
         project = self.project
         self.current = cid if cid is not None and project is not None and variants.is_variant(project, cid) else None
         on = self.current is not None
-        for widget in (self.remove_button, self.picture_button, self.apply_button):
+        for widget in (self.remove_button, self.picture_button, self.plate_button, self.design_button,
+                       self.apply_button):
             widget.state(["!disabled"] if on else ["disabled"])
+        own = on and variants.has_own_design(project, self.current)
+        self.undesign_button.state(["!disabled"] if own else ["disabled"])
         self.status.configure(text="")
         if not on:
             self.title.configure(text="Choose a variant, or make one.")
@@ -223,7 +237,9 @@ class VariantsTab(Tab):
     def draw(self):
         if self.current is None or self.project is None:
             return
-        card = variants.card_picture(self.picture_of(self.current), self.frames.frame_image(), px(self, PREVIEW_W))
+        window = variants.window_of_choice(self.project, self.frames.choice())
+        card = variants.card_picture(self.picture_of(self.current), self.frames.frame_image(), px(self, PREVIEW_W),
+                                     window)
         self.photo = photo(self, card)
         self.preview.configure(image=self.photo)
 
@@ -285,6 +301,63 @@ class VariantsTab(Tab):
         self.draw()
         self.status.configure(text=f"{Path(path).name} is the picture" + (": " + "; ".join(notes) if notes else "."))
         return True
+
+    def choose_plate(self):
+        cid = self.current
+        if cid is None:
+            return
+        path = file_dialogs.askopenfilename(parent=self, title=f"A name plate for {self.project.card_label(cid)}",
+                                            filetypes=[("PNG images", "*.png"), ("All files", "*.*")])
+        if path:
+            self.use_plate(path)
+
+    def use_plate(self, path) -> bool:
+        '''`path` as the chosen variant's name plate: the picture the game draws for its name (96x14, up to 4x),
+        in place of the name set in the game's own lettering (the button, and tests).'''
+        try:
+            notes = art.set_image(self.project, self.current, "title", pngio.read(path))
+        except (OSError, pngio.PngError, ValueError) as problem:
+            messagebox.showerror("FM Editor", f"Could not use {path}: {problem}", parent=self)
+            return False
+        self.app.changed()
+        self.status.configure(text=f"{Path(path).name} is the name plate" + (": " + "; ".join(notes) if notes else "."))
+        return True
+
+    # --- the card's own design -----------------------------------------------------------------
+
+    def design(self):
+        '''The designer window for the chosen variant: its own frame style, edited part by part.'''
+        cid = self.current
+        if cid is None or not self.apply():
+            return None
+        name = variants.own_design(self.project, cid)
+        self.app.changed()
+        self.fill()
+        self.tree.selection_set(str(cid))
+        self.frames.reload(variants.frame_of(self.project, cid))
+        self.draw()
+        return DesignWindow(self, self.app, cid, name, on_close=lambda: self.designed(cid))
+
+    def designed(self, cid):
+        '''The designer was closed: the list and the card as they are now.'''
+        if self.project is None or cid not in self.project.added:
+            return
+        self.fill()
+        self.tree.selection_set(str(cid))
+        self.show(cid)
+
+    def remove_design(self):
+        cid = self.current
+        if cid is None or not variants.has_own_design(self.project, cid):
+            return
+        if not messagebox.askyesno("Remove the design", "Take this card's own design away? It goes back to the "
+                                   "game's frame. Edit > Undo brings it back.", parent=self):
+            return
+        variants.remove_own_design(self.project, cid)
+        self.app.changed()
+        self.fill()
+        self.tree.selection_set(str(cid))
+        self.show(cid)
 
     # --- making and removing -------------------------------------------------------------
 
@@ -358,7 +431,8 @@ class VariantsTab(Tab):
                     image = art.disc_image(self.wa, base, "art")
                 except (OSError, ValueError, KeyError):
                     image = None
-            card = variants.card_picture(image, dialog.frames.frame_image(), px(self, PREVIEW_W))
+            window = variants.window_of_choice(self.project, dialog.frames.choice())
+            card = variants.card_picture(image, dialog.frames.frame_image(), px(self, PREVIEW_W), window)
             dialog.photo = photo(dialog, card)
             dialog.preview.configure(image=dialog.photo)
 

@@ -468,6 +468,22 @@ window. It writes no `name`: the variant keeps its card's own name plate, in the
 game's lettering and in the language the player plays in. The mod needs mod API
 25, which the editor writes as `min_api`.
 
+**Design the card...** is for a card that is more than a recolored frame. It opens
+the UI tab's Frames designer on a frame style that is this variant's alone (a
+copy of the frame it had, or of the game's layout) and on the variant as its
+sample card, so the preview is its own picture. Nothing for other cards is shown
+or changed, and no style becomes the layout's default. Drag, resize, hide or tint
+the picture's window, the name, the stars, the element icon and the ATK and DEF
+values; choose the frame picture, a digit strip of your own and a picture for
+each of the ATK and DEF labels; and set the card's look in the duel hand, on the
+field and in the Library. ATK and DEF are each placed by the centre of their
+digits. **Name plate...** gives the card a name picture of its own (96x14 units, up
+to 4x) in place of the name the game sets in its own lettering: that is how a name in
+another script or font is made. The game draws the name as a one-colour shape in
+the part's tint, so a pale frame needs a dark tint on the name. **Remove the
+design** takes the style away and gives the card the game's frame again. The star
+icons themselves (their shape) are the game's: only their place and tint change.
+
 A variant is its own card in a deck (a deck holds three of a card and its
 variants together) and in the chest; the Library shows a card and its variants
 as one entry, and steps through them with L1 and R1. See
@@ -830,7 +846,9 @@ that the game leaves out).
   digits, stat captions or type captions) or a card-view element. The front
   preview is a game-scale card viewer: drag title, art, stars, attribute,
   values and captions; use the wheel or width/height fields where the game
-  permits a size; and hide any movable element. The **Hand** category has its
+  permits a size; hide any movable element; and **tint** the name, stars,
+  attribute icon and ATK/DEF values (the picture times the colour, so
+  black makes black stars; the grey 808080 is the picture as it is). The **Hand** category has its
   own 52x60 preview and independently edits the hand artwork, ATK/DEF digit
   rows, and their sword/shield markers; field and Library images belong to
   their respective game screens. The assignment panel can set a global,
