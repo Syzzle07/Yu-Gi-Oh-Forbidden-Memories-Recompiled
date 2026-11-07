@@ -181,6 +181,7 @@ checked as well, when it starts.
 | 26 | the release after v0.3.0 | a card's `variant_permille` and `variant_label`: alternate versions of a retail card ([Variants](more-cards.md#variants-alternate-versions-of-a-card)) |
 | 27 | the release after v0.3.0 | a frame style's `stars` picture, `game_frame` and `parts_over_art`, a `color` on the ATK/DFD labels and digit strips, and a card's `art_transparent` (card_layout, [Frame styles](#frame-styles-and-the-rules-that-pick-them)); a `card_layout` of `frame_styles` alone, which no longer replaces another mod's layout ([Layouts of several mods](#layouts-of-several-mods)) |
 | 28 | the release after v0.3.0 | a variant of a card another entry added: its `copy` is that card's identity, `"mod-id:key"` ([Variants](more-cards.md#variants-alternate-versions-of-a-card)) |
+| 29 | the release after v0.3.0 | a card's `finish`, a foil shimmer over the card in its big view ([The manifest](more-cards.md#the-manifest)) |
 
 The FM Editor writes `min_api` on save as the lowest one of these that has
 everything the mod uses, never lowering one written higher, and its Mod

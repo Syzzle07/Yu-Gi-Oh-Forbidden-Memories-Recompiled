@@ -3287,6 +3287,34 @@ an entry the row shows (the card itself at first); everything else is in
   with the name's window from that letter;
 - `BuildDeck_ReturnCardToChest` and `BuildDeck_TakeCardFromChest` set the
   entry's row again after every move.
+### Card finishes (foil)
+
+A card's `finish` (`glossy` or `royal`, notes/more-cards.md; `Cards_Finish`) puts
+a shimmer over the card in its big view. `src/pc/cards/card_foil.c` makes it as
+a list of gouraud quads (`CardFoil_Quads`: pure, the same quads for the same
+ticks, tested in `tests/pc/card_foil_test.c`), and `func_80028B08` (the card's
+drawing, in its `MEMORIES_PC` blocks) submits them as `POLY_G4` packets of the
+projected case 4 with the additive semi-transparency rate (the packet attribute
+`0x50000000`, `0x04000000` more when the card turns in 3D). Nothing is drawn
+from a texture. They are submitted first among the card's pieces: the packet
+submitted last is drawn first, so the foil ends up over them all. The clock is
+`Platform_VBlankCount`, the card's colour word's red scales it (a card that
+fades out takes its foil with it), and the card's box and picture's window are
+the frame layout's and art's when a full-bleed style gives them, else retail's
+(140x192, and 102x96 at 19,50).
+
+- glossy: a 6x6 rainbow grid over the picture, and every 270 VBlanks two glints
+  (arms going right-then-down and down-then-right) run from the top-left corner
+  round the card's edge to the bottom-right, with another pair round the
+  picture's edge: a narrow bright band over a soft wide one, with a fading tail;
+- royal: a 6x8 grid of colours turning round the card's middle, and, for 170 of
+  every 260 VBlanks, the shards (a jittered 5x7 grid cut in triangles) that a
+  band running to the bottom-right lights in rainbow colours.
+
+The game's 32-bit build has no stack probe (the `_alloca` stub is an
+`outside_resident_image` one), so a game function's frame must stay under a page:
+the quads are a static buffer.
+
 
 ### Card passwords (View)
 

@@ -24,6 +24,7 @@
 #include "pc/platform/ui_config.h"
 #include "pc/free_duel/duelists.h"
 #include "pc/text/glyphs.h"
+#include "card_foil.h"
 #include "pc/text/text.h"
 #include "pc/mods/mods.h"
 #include "battle_models.h"
@@ -369,6 +370,7 @@ static unsigned char variant_opponents[CARD_TABLE_ID_END];
 static char *variant_label[CARD_TABLE_ID_END];
 static unsigned short *family_members;
 static unsigned short family_start[CARD_TABLE_ID_END + 1];
+static unsigned char card_finishes[CARD_TABLE_ID_END];   /* a card's "finish" (card_foil.h), 0: none */
 
 static void say(const char *format, ...)
 {
@@ -1564,6 +1566,7 @@ static void add_entry(const char *mod, const char *directory, int index, const J
     int variant_of_mod_card = 0;    /* a variant of a card another entry added: it has that card's name and pictures */
     unsigned stats, password = CARD_PASSWORD_NONE, entry_fusion_groups = 0;
     int entry_has_fusion_groups = 0;
+    int entry_finish = 0;   /* -1: as the card has it */
     int was_monster, stars_given = 0, logical_type;
     MonsterEffect read_effects[MONSTER_EFFECTS_MAX];
     MonsterEffect *own_effects = NULL;
@@ -1850,6 +1853,15 @@ static void add_entry(const char *mod, const char *directory, int index, const J
     /* What View > Card passwords shows (passwords.h): a copy has none
      * unless it says, a replaced card keeps the disc's. */
     has_password = password_value && read_password(mod, index, password_value, &password);
+    /* The foil over the card in its view (card_foil.h): none unless the entry says; a replace that does not
+     * say leaves the card's. */
+    if (Json_Member(entry, "finish")) {
+        const char *finish = Json_String(Json_Member(entry, "finish"), "");
+        entry_finish = !strcmp(finish, "glossy") ? CARD_FINISH_GLOSSY : !strcmp(finish, "royal") ? CARD_FINISH_ROYAL : 0;
+        if (!entry_finish && *finish) Mods_Note(mod, "cards[%d]: \"finish\" is \"glossy\" or \"royal\"", index);
+    } else if (replace) {
+        entry_finish = -1;
+    }
     /* Artwork: PNGs relative to the mod's directory, shared by the entry's
      * cards; a card with a name of its own gets a title plate that says it. */
     {
@@ -2011,6 +2023,7 @@ static void add_entry(const char *mod, const char *directory, int index, const J
         frames[id] = frame;
         snprintf(frame_style_names[id], sizeof(frame_style_names[id]), "%s", frame_style);
         tag_masks[id] = tags;
+        if (entry_finish >= 0) card_finishes[id] = (unsigned char)entry_finish;
         names[id] = name && *name ? encode_name(mod, name, n, id) : variant_of_mod_card ? names[base] : NULL;
         descriptions[id] = description && *description ? encode_description(mod, description, id)
                            : variant_of_mod_card ? descriptions[base] : NULL;
@@ -2743,6 +2756,11 @@ int Cards_FamilyCopies(const unsigned char *quantities, int id)
     copies = quantities[base];
     for (i = 0; i < count; i++) copies += quantities[Cards_VariantMember(base, i)];
     return copies;
+int Cards_Finish(int id)
+{
+    return Cards_Valid(id) ? card_finishes[id] : 0;
+}
+
 }
 
 int Cards_PickVariant(int id, int use)

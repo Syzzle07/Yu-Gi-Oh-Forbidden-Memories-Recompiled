@@ -343,6 +343,9 @@ int Cards_LibraryFamilySize(int head);
 int Cards_LibraryFamilyMember(int head, int index);
 void Cards_LibraryVariantNote(int shown, int head);
 
+/* A card's "finish" (card_foil.h): CARD_FINISH_GLOSSY or CARD_FINISH_ROYAL, the foil
+ * its view shows over it; 0 for none, which is every card unless a mod says. */
+int Cards_Finish(int id);
 /* The running save was just loaded (`state` is its SaveDataState), or was
  * just written with this sequence number: read or write what it holds of the
  * new cards, under the token Cards_SetSlotTokens gave last. */

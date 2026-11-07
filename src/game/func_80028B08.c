@@ -16,6 +16,9 @@
 #include "pc/cards/pack_shop.h"
 #include "pc/cards/card_layout.h"
 #include "pc/cards/card_layout_art.h"
+#include "pc/cards/card_foil.h"
+#include "pc/cards/cards.h"
+#include "pc/platform/platform.h"
 #include "pc/text/hd_text.h"
 #include "pc/cards/attributes.h"
 #include "pc/debug/log.h"
@@ -352,6 +355,42 @@ static int CardLayout_DrawTitleMask(const SpritePrim *src, s32 x, s32 y, s32 ot,
  * unchanged) and clamped to a byte -- a filter over whatever the card's own
  * fade tint (win->field_0C) already is, not a replacement for it, the same
  * way the GPU's own vertex-color multiply works. */
+/* A card's foil finish (card_foil.h): its gouraud quads, added onto the card. Submitted first among the
+ * card's pieces, which are drawn in the opposite order, so that it ends up over them all. */
+static void CardLayout_DrawFoil(s32 finish, s32 x, s32 y, s32 w, s32 h, s32 art_x, s32 art_y, s32 art_w, s32 art_h,
+                                s32 ot, s32 mode, u32 rgb, Func80028B08Extra *EXT)
+{
+    /* Not on the stack: a frame past a page needs the compiler's stack probe, which the game's 32-bit build lacks. */
+    static CardFoilQuad quads[CARD_FOIL_MAX];
+    CardFoilRect card, art;
+    s32 projected = ((u32)mode >> 16) == 0xF;
+    s32 attribute = (projected ? 0x04000000 : 0) | 0x50000000; /* semi-transparent, added (rate 1) */
+    s32 art_mode = (mode & 0xFFFF) | 0x40000;
+    s32 count, i;
+
+    card.x = x;
+    card.y = y;
+    card.w = w;
+    card.h = h;
+    art.x = art_x;
+    art.y = art_y;
+    art.w = art_w;
+    art.h = art_h;
+    count = CardFoil_Quads(finish, &card, &art, Platform_VBlankCount(), (u8)rgb, quads, CARD_FOIL_MAX);
+    for (i = 0; i < count; i++) {
+        POLY_G4 poly;
+        const CardFoilQuad *q = &quads[i];
+
+        setPolyG4(&poly);
+        setRGB0(&poly, q->r[0], q->g[0], q->b[0]);
+        setRGB1(&poly, q->r[1], q->g[1], q->b[1]);
+        setRGB2(&poly, q->r[2], q->g[2], q->b[2]);
+        setRGB3(&poly, q->r[3], q->g[3], q->b[3]);
+        setXY4(&poly, q->x[0], q->y[0], q->x[1], q->y[1], q->x[2], q->y[2], q->x[3], q->y[3]);
+        DisplayObject_SubmitPacket((SpritePrim *)attribute, (Func80028B08Ctx *)&poly, ot, art_mode, EXT);
+    }
+}
+
 static u32 CardLayout_Tint(u32 rgb, s32 r, s32 g, s32 b)
 {
     s32 tr = (s32)(u8)rgb * r / 0x80;
@@ -490,6 +529,22 @@ void func_80028B08(DisplayObject *obj, s32 arg1) {
     PRM->cxcy.word = obj->field_40.word;
     PRM->uv.word = obj->field_5C;
     PRM->tpage = obj->field_66;
+#ifdef MEMORIES_PC
+    if (Cards_Finish((s32)(s16)D_800EA0E8[obj->field_67].field_30) != 0) {
+        s32 card_w = CardLayout_FullBleed() && frame_layout.w != 0 ? frame_layout.w : 140;
+        s32 card_h = CardLayout_FullBleed() && frame_layout.h != 0 ? frame_layout.h : 192;
+        s32 left = win->field_30.h.field_30, top = win->field_30.h.field_32;
+
+        if (art_layout.visible && art_layout.w != 0) {
+            CardLayout_DrawFoil(Cards_Finish((s32)(s16)D_800EA0E8[obj->field_67].field_30), left, top, card_w, card_h,
+                                left + art_layout.x, top + art_layout.y, art_layout.w, art_layout.h, arg1, arg,
+                                win->field_0C, EXT);
+        } else {
+            CardLayout_DrawFoil(Cards_Finish((s32)(s16)D_800EA0E8[obj->field_67].field_30), left, top, card_w, card_h,
+                                left + 0x13, top + 0x32, 0x66, 0x60, arg1, arg, win->field_0C, EXT);
+        }
+    }
+#endif
 #ifdef MEMORIES_PC
     /* A "card_layout" mod's full-bleed stretches the art (CardLayout_DrawArt)
      * in place of retail's own small quad -- PRM is still fully set up with

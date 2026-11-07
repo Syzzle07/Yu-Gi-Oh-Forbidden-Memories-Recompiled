@@ -318,6 +318,11 @@ class FeatureTest(unittest.TestCase):
         self.assertEqual(self.needs({"cards": [{"copy": 35, "id": "a", "variant_permille": 50}]}), 26)
         self.assertEqual(self.needs({"cards": [{"copy": "mod-id:key", "id": "a"}]}), 0)
 
+    def test_api_29_finish(self):
+        """A card's foil finish (notes/more-cards.md): a game of API 24 would draw the plain card."""
+        self.assertEqual(self.needs({"cards": [{"copy": 1, "id": "a", "finish": "royal"}]}), 29)
+        self.assertEqual(self.needs({"cards": [{"copy": 1, "id": "a"}]}), 0)
+
     def test_reasons_are_the_highest_apis(self):
         api, reasons = compat.required({"card_text_colors": {}, "ui": {}, "limits": {"swords_turns": 5}})
         self.assertEqual(api, 11)

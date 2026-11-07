@@ -677,6 +677,15 @@ if(BUILD_TESTING)
         target_compile_options(memories_build_deck_fold_test PRIVATE -Wall -Wextra)
     endif()
     add_test(NAME pc_build_deck_fold COMMAND memories_build_deck_fold_test)
+    # A card's foil finish (card_foil.c): the quads it draws over a card.
+    add_executable(memories_card_foil_test tests/pc/card_foil_test.c src/pc/cards/card_foil.c)
+    target_include_directories(memories_card_foil_test PRIVATE src)
+    target_compile_definitions(memories_card_foil_test PRIVATE MEMORIES_PC)
+    target_link_libraries(memories_card_foil_test PRIVATE m)
+    if(NOT MSVC)
+        target_compile_options(memories_card_foil_test PRIVATE -Wall -Wextra)
+    endif()
+    add_test(NAME pc_card_foil COMMAND memories_card_foil_test)
     # Custom monster types (API 15, cards.c's "card_types"):
     # a retail type renamed, the whole 24-255 bank, a retail card converted
     # to and from a custom monster type, a name collision, two mods
