@@ -435,7 +435,9 @@ name plate (96x14), one picture each in the view chosen at the top: **Disc**,
 changes shows the disc's beside it (before, after). **Import PNG...** (up to
 4x, 408x384 and 160x128, for detail at Internal 2x/4x, on retail and added
 cards alike; or double-click a picture), **Export disc's...** and **Export
-mod's...** (to paint over), **Revert to disc**. The pictures grow to the
+mod's...** (to paint over), **Revert to disc**. A card's picture may also be a
+JPEG: the editor turns it into a PNG as it takes it in (this needs Pillow,
+`pip install pillow`; the editor reads PNG by itself). The pictures grow to the
 room the window gives them, the thumbnail and name plate side by side under
 the picture when that makes them bigger. The list's **Art** column says which
 parts the mod changes. A card the mod adds with a name of its own has its
@@ -452,7 +454,7 @@ card, each variant of it takes its place by the chance you set. The list shows t
 mod's variants by their card; beside it the chosen one is drawn the way the game
 lays it out, the picture in its frame's window.
 
-**New variant...** asks for the card, the picture (a PNG; its middle is cut to
+**New variant...** asks for the card, the picture (a PNG or JPEG; its middle is cut to
 the card's shape, as in the Art tab), the frame, the chance (0.1% to 100%) and a
 label (24 letters, shown under the card in the Library). The **frame** is the
 game's own, one of the presets (rainbow, gold and silver foil), a style the mod

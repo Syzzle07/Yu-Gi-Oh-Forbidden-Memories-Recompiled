@@ -2218,6 +2218,7 @@ class ModInfoTab(Tab):
             box.delete("1.0", "end")
             box.insert("1.0", value)
         self._shown = json.loads(json.dumps(self.shown_other()))     # what the box shows, as it reads back
+        self._shown_settings = json.loads(json.dumps(info.settings))
         source = self.project.source_dir
         self.folder.configure(text=f"Folder: {source}" if source else
                               "Not saved yet: File > Save (Ctrl+S) makes its folder, File > Export puts it in "
@@ -2280,7 +2281,11 @@ class ModInfoTab(Tab):
         info.version = self.vars["version"].get().strip()
         info.author = self.vars["author"].get()
         info.description = self.description.get("1.0", "end-1c")
-        info.settings = settings
+        # Only when the box was changed: another tab (Variants: its "Special frames" switch) may have
+        # added a setting since the box was filled, and the stale box must not take it away.
+        if settings != getattr(self, "_shown_settings", None):
+            info.settings = settings
+            self._shown_settings = json.loads(json.dumps(settings))
         # Only what was typed in the box: the keys other tabs keep in the same
         # place ("limits", "guardian_stars", "starter_pools", a password an
         # added card's removal took out) stay as those tabs left them, the

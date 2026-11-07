@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from fm_editor import compat, frame_presets, manifest, pngio, ui_frames, validate, variants
-from fm_editor.model import Project
+from fm_editor.model import Project, replaced
 from fm_editor.pngio import Image
 from fm_editor.tests.test_data import fixture
 from fm_editor.tests.test_gui import GuiCase
@@ -194,6 +194,61 @@ class VariantsTest(unittest.TestCase):
         self.assertEqual(errors(again), [])
         self.assertEqual(variants.frame_picture(again, found[0].cid).size, (256, 512))
         self.assertIsNone(variants.frame_picture(again, found[1].cid))
+
+    def test_a_replaced_picture_is_not_left_in_the_folder(self):
+        art_image = picture(204, 192, (20, 120, 220, 255))
+        cid, _ = variants.add_variant(self.project, 1, art_image, None, 50, "Mine", key="mine")
+        name = variants.own_design(self.project, cid)
+        entry = variants.styles(self.project)[name]
+        first, second = "frames/one.png", "frames/two.png"
+        self.project.files[first] = frame_presets.png("gold")
+        entry["image"] = first
+        folder = self.root / "mod"
+        manifest.save_mod(self.project, folder)
+        self.assertTrue((folder / first).is_file())
+        # The frame is replaced by another picture: the first is not named any more.
+        self.project.files[second] = frame_presets.png("silver")
+        entry["image"] = second
+        replaced(self.project, first)
+        replaced(self.project, "art/not-ours.png")           # only frames/ and ui/ are swept
+        manifest.save_mod(self.project, folder)
+        self.assertFalse((folder / first).exists())
+        self.assertTrue((folder / second).is_file())
+        self.assertNotIn(first, self.project.files)
+        # A picture still named by another style is kept.
+        other = variants.styles(self.project).setdefault("other", {"image": second})
+        entry["image"] = "frames/three.png"
+        self.project.files["frames/three.png"] = frame_presets.png("rainbow")
+        replaced(self.project, second)
+        manifest.save_mod(self.project, folder)
+        self.assertTrue((folder / second).is_file())
+        # The variant's design taken away: its pictures go with it.
+        variants.remove_own_design(self.project, cid)
+        manifest.save_mod(self.project, folder)
+        self.assertFalse((folder / "frames/three.png").exists())
+
+    def test_a_jpeg_picture(self):
+        try:
+            from PIL import Image as Picture
+        except ImportError:
+            self.skipTest("Pillow is not installed")
+        path = self.root / "art.jpg"
+        Picture.new("RGB", (60, 40), (200, 30, 30)).save(path, "JPEG")
+        image = pngio.read(path)
+        self.assertEqual(image.size, (60, 40))
+        red, green, blue, alpha = image.rgba[:4]
+        self.assertTrue(red > 150 and green < 80 and blue < 80 and alpha == 255)
+        # A PNG is read as it always was, and a file of no picture kind is refused.
+        pngio.write(self.root / "a.png", picture(2, 2, (1, 2, 3, 255)))
+        self.assertEqual(pngio.read(self.root / "a.png").size, (2, 2))
+        (self.root / "bad.jpg").write_bytes(b"not a picture")
+        with self.assertRaises(pngio.PngError):
+            pngio.read(self.root / "bad.jpg")
+        # Without Pillow the message says what to do.
+        with mock.patch.dict("sys.modules", {"PIL": None}):
+            with self.assertRaises(pngio.PngError) as caught:
+                pngio.read(path)
+        self.assertIn("Pillow", str(caught.exception))
 
     def test_checks(self):
         project = self.project
@@ -442,6 +497,25 @@ class VariantsTabTest(GuiCase):
         self.assertNotIn(name, project.other["card_layout"]["frame_styles"])
         self.assertNotIn("frame_style", project.added[cid].extra)
         self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("grid", ""))
+
+    def test_the_info_tab_keeps_the_switch_a_variant_added(self):
+        tab, project = self.app.variants, self.app.project
+        self.app.info.refresh()                        # the Info tab shows the mod without the setting
+        self.assertEqual(project.info.settings, [])
+        tab.make(1, picture(204, 192, (200, 30, 30, 255)), ("preset", "gold"), 50, "Gold")
+        self.assertEqual([s["key"] for s in project.info.settings], ["full_bleed"])
+        # Saving applies the Info tab: its stale box must not take the setting away.
+        self.assertTrue(self.app.info.commit())
+        self.assertEqual([s["key"] for s in project.info.settings], ["full_bleed"])
+        folder = Path(self.tmp.name) / "saved"
+        manifest.save_mod(project, folder)
+        written = json.loads((folder / "mod.json").read_text(encoding="utf-8"))
+        self.assertEqual([s["key"] for s in written["settings"]], ["full_bleed"])
+        # Typed in the box, it still applies.
+        self.app.info.refresh()
+        self.app.info.settings.delete("1.0", "end")
+        self.assertTrue(self.app.info.commit())
+        self.assertEqual(project.info.settings, [])
 
     def test_a_design_without_a_frame_picture(self):
         tab, project = self.app.variants, self.app.project

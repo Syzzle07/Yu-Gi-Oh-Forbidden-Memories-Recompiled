@@ -436,7 +436,8 @@ class ArtTab(Tab):
         if cid is None:
             return
         path = file_dialogs.askopenfilename(parent=self, title=f"{art.LABELS[part]} for {self.project.card_label(cid)}",
-                                            filetypes=[("PNG images", "*.png"), ("All files", "*.*")])
+                                            filetypes=[("Pictures", "*.png *.jpg *.jpeg"), ("PNG images", "*.png"),
+                                                       ("All files", "*.*")])
         if not path:
             return
         self.use_file(part, path)

@@ -914,3 +914,10 @@ class Project:
 
     def clone(self) -> "Project":
         return copy.deepcopy(self)
+
+
+def replaced(project, name):
+    """A picture of the mod (frames/..., ui/...) that was replaced or taken out: it is deleted from the
+    folder when the mod is saved, if the manifest names it no more (manifest.save_mod)."""
+    if isinstance(name, str) and name.startswith(("frames/", "ui/")):
+        project.__dict__.setdefault("replaced_files", set()).add(name)

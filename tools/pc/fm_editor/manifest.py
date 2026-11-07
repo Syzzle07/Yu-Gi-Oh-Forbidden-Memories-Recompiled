@@ -1564,6 +1564,33 @@ def is_game_folder(folder: Path) -> bool:
             for p in folder.glob("*") if p.is_file())
 
 
+def _names(value) -> set:
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, dict):
+        return set().union(*map(_names, value.values())) if value else set()
+    if isinstance(value, list):
+        return set().union(*map(_names, value)) if value else set()
+    return set()
+
+
+def _sweep_replaced(project: Project, folder: Path, manifest: dict):
+    stale = project.__dict__.pop("replaced_files", set())
+    if not stale:
+        return
+    named = _names(manifest)
+    for name in stale:
+        if name in named:
+            continue
+        project.files.pop(name, None)
+        target = (folder / name)
+        try:
+            if target.is_file() and folder.resolve() in target.resolve().parents:
+                target.unlink()
+        except OSError:
+            pass
+
+
 def save_mod(project: Project, folder, manifest: dict = None, copy_source: bool = True) -> Path:
     """Write the mod folder: mod.json, and when it is a new place, the files
     of the folder the mod was opened from (art, text, textures...).
@@ -1604,4 +1631,5 @@ def save_mod(project: Project, folder, manifest: dict = None, copy_source: bool 
         out.write(dumps(manifest))
     temporary.replace(path)
     project.source_dir = folder
+    _sweep_replaced(project, folder, manifest)
     return path

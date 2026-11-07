@@ -7,6 +7,7 @@ top to bottom.
 from __future__ import annotations
 
 import hashlib
+import os
 import struct
 import zlib
 
@@ -243,9 +244,29 @@ def _raw_value(line: bytes, x: int, channel: int, bits: int, channels: int) -> i
     return (line[x // per] >> (8 - bits - (x % per) * bits)) & ((1 << bits) - 1)
 
 
+def as_png(data: bytes, name: str = "the file") -> bytes:
+    '''A picture file's bytes as PNG bytes: a PNG as it is; a JPEG (or another kind of picture) made into a PNG
+    by Pillow when it is installed (the editor reads PNG by itself and needs nothing else for it).'''
+    if data.startswith(SIGNATURE):
+        return data
+    try:
+        from PIL import Image as Picture, ImageOps, UnidentifiedImageError
+    except ImportError:
+        raise PngError(f"{name} is not a PNG. JPEG pictures need Pillow: pip install pillow (or save it as a PNG)")
+    import io
+    try:
+        with Picture.open(io.BytesIO(data)) as opened:
+            opened = ImageOps.exif_transpose(opened).convert("RGBA")
+            out = io.BytesIO()
+            opened.save(out, "PNG")
+            return out.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError) as problem:
+        raise PngError(f"{name} is not a picture the editor can read ({problem})")
+
+
 def read(path) -> Image:
     with open(path, "rb") as handle:
-        return decode(handle.read())
+        return decode(as_png(handle.read(), os.path.basename(str(path))))
 
 
 # --- writing --------------------------------------------------------------------

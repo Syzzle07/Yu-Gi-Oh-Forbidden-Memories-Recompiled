@@ -23,7 +23,7 @@ from pathlib import Path
 
 from . import art, frame_presets, pngio
 from .gamedata import CARD_COUNT
-from .model import KEY_RE
+from .model import KEY_RE, replaced
 
 EXODIA = (17, 18, 19, 20, 21)
 PERMILLE_MIN, PERMILLE_MAX = 1, 1000
@@ -141,6 +141,16 @@ def styles(project) -> dict:
     value = project.other.get("card_layout")
     value = value.get("frame_styles") if isinstance(value, dict) else None
     return value if isinstance(value, dict) else {}
+
+
+def _images_of(entry) -> list:
+    '''The picture files a frame style names (its frame, back and parts).'''
+    if isinstance(entry, dict):
+        out = [entry["image"]] if isinstance(entry.get("image"), str) else []
+        for value in entry.values():
+            out += _images_of(value)
+        return out
+    return []
 
 
 def _held(project, name: str):
@@ -280,6 +290,8 @@ def remove_own_design(project, cid: int):
         del added.extra["frame_style"]
     entries = styles(project)
     if name in entries and not any(a.extra.get("frame_style") == name for a in project.added.values()):
+        for value in _images_of(entries[name]):
+            replaced(project, value)
         del entries[name]
 
 

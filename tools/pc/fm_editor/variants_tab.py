@@ -333,7 +333,8 @@ class VariantsTab(Tab):
         if cid is None:
             return
         path = file_dialogs.askopenfilename(parent=self, title=f"A picture for {self.project.card_label(cid)}",
-                                            filetypes=[("PNG images", "*.png"), ("All files", "*.*")])
+                                            filetypes=[("Pictures", "*.png *.jpg *.jpeg"), ("PNG images", "*.png"),
+                                                       ("All files", "*.*")])
         if path:
             self.use_picture(path)
 
@@ -437,7 +438,7 @@ class VariantsTab(Tab):
             line = ttk.Frame(body)
             line.grid(row=1, column=1, sticky="w", padx=4, pady=(4, 0))
             dialog.picture = ttk.Label(line, text="the card's own")
-            ttk.Button(line, text="Choose a PNG...", command=lambda: choose(dialog)).pack(side="left")
+            ttk.Button(line, text="Choose a picture...", command=lambda: choose(dialog)).pack(side="left")
             dialog.picture.pack(side="left", padx=6)
             ttk.Label(body, text="Frame").grid(row=2, column=0, sticky="w", pady=(4, 0))
             dialog.frames = FrameChooser(body, lambda: self.project, lambda: draw(dialog))
@@ -456,7 +457,8 @@ class VariantsTab(Tab):
 
         def choose(dialog):
             path = file_dialogs.askopenfilename(parent=dialog, title="A picture for the variant",
-                                                filetypes=[("PNG images", "*.png"), ("All files", "*.*")])
+                                                filetypes=[("Pictures", "*.png *.jpg *.jpeg"), ("PNG images", "*.png"),
+                                                           ("All files", "*.*")])
             if not path:
                 return
             try:

@@ -18,6 +18,7 @@ from .ui_tab import (FRAME_IMAGE_DIR, GAME_H, GAME_W, ColorButton, ElementList, 
                      import_image, mod_image, section, set_member, sized)
 from .widgets import CardField, px
 from .gamedata import TYPE_NAMES
+from .model import replaced
 
 CARD_W, CARD_H = 140, 196
 HAND_COORD_LIMIT = 128
@@ -544,6 +545,8 @@ class FramesPage(ttk.Frame):
 
     def set_asset(self, key, image):
         path = SPECS[key][2]
+        old = self.asset(key)
+        if old and old != image and self.project is not None: replaced(self.project, old)
         if key in DIRECT_ASSETS: set_member(self.style(True), path[0], image)
         elif key in IMAGE_PARTS:
             part = self.part(key, True)
