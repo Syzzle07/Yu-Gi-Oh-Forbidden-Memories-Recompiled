@@ -489,8 +489,9 @@ own keeps that, behind the picture. The name, stars, element and
 ATK/DEF are over the picture, and a picture with transparent parts (a figure on a clear
 background) keeps them see-through, so the frame shows behind it. In the designer the picture's
 window can then be moved and sized past the card (up to 420 x 590 units), and the preview
-cuts it at the card as the game does. The small picture of the hand and the field is the middle
-of the picture as it is.
+cuts it at the card as the game does. The small picture of the hand and the field is all of the
+picture too (squeezed into its shape, transparent parts kept), and the design's hand card puts it over
+the whole small card.
 
 **Layers...** makes the picture from two files laid into one, so a full art card needs no
 picture made beforehand: a **background** (the square of the picture) and a **foreground** (a

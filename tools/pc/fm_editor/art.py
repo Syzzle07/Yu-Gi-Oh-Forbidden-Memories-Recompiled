@@ -207,7 +207,7 @@ def normalize(image: Image, part: str, whole: bool = False):
     for the card's window to stretch back out to the picture's own."""
     notes = []
     w, h = SIZES[part]
-    if whole and part == "art":
+    if whole and part in ("art", "thumbnail"):
         scale = max(1, min(MAX_SCALE, round(max(image.width / w, image.height / h))))
         notes.append(f"all of it is kept ({image.width}x{image.height}, squeezed to {w * scale}x{h * scale}: "
                      "the card's window stretches it back)")

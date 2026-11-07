@@ -313,12 +313,13 @@ class VariantsTest(unittest.TestCase):
         self.assertIs(entry["full_bleed"], True)
         self.assertIs(entry["parts_over_art"], True)      # the name, stars and numbers show over the picture
         self.assertIs(entry["game_frame"], True)          # on the game's own frame
+        self.assertEqual(entry["hand"]["art"], {"x": 0, "y": 0, "width": 52, "height": 60})   # the hand's card too
         for key in ("title", "digits", "atk_label", "dfd_label"):
             self.assertNotIn(key, entry)                  # the name, words and numbers are the game's own then
         self.assertEqual(self.project.added[cid].extra["frame_style"], name)
-        # The thumbnail comes from the middle of the picture as it is, not the squeezed one.
+        # The small picture (the hand's) is all of the picture too, in the small picture's shape.
         thumb = art.state(self.project).images[(cid, "thumbnail")].image
-        self.assertEqual(thumb.width * 32, thumb.height * 40)
+        self.assertEqual(thumb.width * 32, thumb.height * 40)          # the small picture's shape
         self.assertEqual(errors(self.project), [])
         # A picture that is not kept whole is cut, as ever, and takes no design.
         other, _ = variants.add_variant(self.project, 1, tall, None, 50, "Cut", key="bewd-cut")
@@ -353,6 +354,9 @@ class VariantsTest(unittest.TestCase):
         middle = ((stored.height // 2) * stored.width + stored.width // 2) * 4
         self.assertEqual(stored.rgba[middle + 3], 255)                              # the figure: solid
         self.assertTrue(any("see-through" in n for n in notes))
+        thumb = art.state(self.project).images[(cid, "thumbnail")].image
+        self.assertFalse(thumb.opaque())                                            # the hand's small picture keeps it clear too
+        self.assertEqual(thumb.rgba[3], 0)
         self.assertIs(self.project.added[cid].extra["art_transparent"], True)         # the game keeps it clear
         # The preview lays it over the frame, which shows where it is clear.
         frame = picture(140, 197, (20, 200, 20, 255))

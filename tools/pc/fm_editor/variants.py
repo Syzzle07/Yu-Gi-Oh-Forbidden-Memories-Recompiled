@@ -417,6 +417,9 @@ def make_full_art(project, cid: int, aspect: float):
     entry = styles(project)[name]
     entry["art"] = full_art_window(aspect)
     entry["parts_over_art"] = True          # the name, stars, element and ATK/DEF show over a picture past its window
+    # The duel hand's small card: the whole picture over the whole 52 x 60 card, as the big one (the game draws the
+    # small picture into this box, and the game's own hand card shows through where it is clear).
+    entry.setdefault("hand", {}).setdefault("art", {"x": 0, "y": 0, "width": 52, "height": 60})
     if not entry.get("image"):
         # The game's own frame stays under the picture (game_frame): with the name, the ATK and DFD words and the numbers
         # left out, they are the game's own, where it puts them (card_layout.c).
@@ -441,7 +444,7 @@ def set_art(project, cid: int, image, whole: bool = False) -> list:
     if whole:
         # The small picture (the hand's, the field's) is the middle of the picture as it is: the game would make it
         # from the squeezed one, and stretch it.
-        art.set_image(project, cid, "thumbnail", image)
+        art.set_image(project, cid, "thumbnail", image, whole=True)
         make_full_art(project, cid, image.width / image.height)
         notes.append("the card has a design of its own now: its picture covers the card")
     return notes
