@@ -513,6 +513,45 @@ class VariantsTabTest(GuiCase):
         self.assertTrue(self.app.info.commit())
         self.assertEqual(project.info.settings, [])
 
+    def test_coloring_the_numbers_and_words(self):
+        tab, project = self.app.variants, self.app.project
+        cid = tab.make(1, picture(204, 192, (200, 30, 30, 255)), None, 50, "Mine")
+        name = variants.design_name(project.added[cid].key)
+        tab.show(cid)
+        page = tab.design()
+        entries = project.other["card_layout"]["frame_styles"]
+        # The game draws its own numbers by subtraction: they take no color. Coloring one puts in the editor's
+        # white digit strip, which a color multiplies; coloring the other uses the same strip.
+        self.assertNotIn("image", entries[name].get("digits", {}))
+        page.select("atk")
+        page.set_tint(0x000000)
+        image = entries[name]["digits"]["image"]
+        self.assertEqual(image, f"frames/{name}-digits.png")
+        self.assertEqual(pngio.decode(project.files[image]).size, (256, 256))
+        self.assertEqual(entries[name]["digits"]["atk"]["color"], {"r": 0, "g": 0, "b": 0})
+        page.select("def")
+        page.set_tint(0x204060)
+        self.assertEqual(entries[name]["digits"]["image"], image)
+        self.assertEqual(entries[name]["digits"]["def"]["color"], {"r": 0x20, "g": 0x40, "b": 0x60})
+        # A word: its own white picture, put where the preview shows it.
+        page.select("atk_label")
+        self.assertNotIn("atk_label", entries[name])
+        page.set_tint(0x000000)
+        label = entries[name]["atk_label"]
+        self.assertEqual(label["image"], f"frames/{name}-atk_label.png")
+        self.assertEqual(pngio.decode(project.files[label["image"]]).size, (128, 64))
+        self.assertEqual([label[k] for k in ("x", "y", "width", "height")], [12, 171, 16, 8])
+        self.assertEqual(label["color"], {"r": 0, "g": 0, "b": 0})
+        self.assertNotIn("dfd_label", entries[name])           # the other word is left as it was
+        page.select("dfd_label")
+        page.set_tint(0x808080)                                # no tint is no picture put in
+        self.assertNotIn("dfd_label", entries[name])
+        self.assertEqual(ui_frames.tint_color(0x000000), "#000000")
+        # The preview draws a colored picture colored.
+        self.assertEqual(len(ui_frames.TEXT_ASSETS), 4)
+        # The game reads what was written: no error from the checks.
+        self.assertEqual(errors(project), [])
+
     def test_a_variants_design_is_not_listed_in_the_ui_tab(self):
         tab, project = self.app.variants, self.app.project
         cid = tab.make(1, picture(204, 192, (200, 30, 30, 255)), ("preset", "gold"), 50, "Mine")

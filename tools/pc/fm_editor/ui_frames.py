@@ -19,6 +19,7 @@ from .ui_tab import (FRAME_IMAGE_DIR, GAME_H, GAME_W, ColorButton, ElementList, 
 from .widgets import CardField, px
 from .gamedata import TYPE_NAMES
 from .model import replaced
+from . import text_presets
 
 CARD_W, CARD_H = 140, 196
 HAND_COORD_LIMIT = 128
@@ -79,12 +80,15 @@ MOVABLE = {"title", "art", "stars", "attribute", "spell_icon", "atk", "def", "at
            "hand_atk_label", "hand_dfd_label"}
 # The parts the game lets a "color" tint (card_layout.c: title, stars, attribute and the digits). 0x80 in each
 # channel is the picture as it is: less darkens it, more brightens it, up to twice.
-TINTABLE = {"title", "stars", "attribute", "spell_icon", "atk", "def"}
+TINTABLE = {"title", "stars", "attribute", "spell_icon", "atk", "def", "atk_label", "dfd_label"}
+# What a tint needs to show: the game draws its own numbers by subtraction (they only darken, whatever the tint), so a
+# colored number or word is drawn from a white picture, the editor's own (text_presets.py), put in when one is colored.
+TEXT_ASSETS = {"atk": "digits", "def": "digits", "atk_label": "atk_label", "dfd_label": "dfd_label"}
 NEUTRAL_TINT = 0x808080
 
 
 def tint_value(color) -> int:
-    '''A part's "color" ({"r", "g", "b"}) as 0xRRGGBB; neutral where it has none.'''
+    """A part's "color" ({"r", "g", "b"}) as 0xRRGGBB; neutral where it has none."""
     if not isinstance(color, dict):
         return NEUTRAL_TINT
     channels = [as_int(color.get(name), 0x80) for name in ("r", "g", "b")]
@@ -92,7 +96,7 @@ def tint_value(color) -> int:
 
 
 def tinted(image, value):
-    '''`image` as the game draws it with a tint (card_layout.c's "color"): each channel times value/128, to 255.'''
+    """`image` as the game draws it with a tint (card_layout.c's "color"): each channel times value/128, to 255."""
     if image is None or value == NEUTRAL_TINT:
         return image
     factors = ((value >> 16) & 255, (value >> 8) & 255, value & 255)
@@ -104,7 +108,7 @@ def tinted(image, value):
 
 
 def tint_color(value):
-    '''The tint as the colour of a white thing drawn with it: "#rrggbb".'''
+    """The tint as the colour of a white thing drawn with it: "#rrggbb"."""
     return "#%02x%02x%02x" % tuple(min(255, ((value >> s) & 255) * 255 // 128) for s in (16, 8, 0))
 
 
@@ -320,9 +324,9 @@ def hand_sprite(wa, u, v, width=8, height=8):
 
 
 class FramesPage(ttk.Frame):
-    '''`locked` ({"style": name, "card": id}) pins the page to one style and one card, for a window of
+    """`locked` ({"style": name, "card": id}) pins the page to one style and one card, for a window of
     its own that designs a single card (the Variants tab): the list of styles and the ways of applying
-    one to many cards are not shown, and no style becomes the layout's default.'''
+    one to many cards are not shown, and no style becomes the layout's default."""
 
     def __init__(self, master, tab, locked=None):
         super().__init__(master)
@@ -453,9 +457,9 @@ class FramesPage(ttk.Frame):
             self.lock(locked["style"], locked["card"], fill=False)
 
     def lock(self, style_name, card, fill=True):
-        '''Pin the page to one style and one card (again, for another card, while the page is kept): the
+        """Pin the page to one style and one card (again, for another card, while the page is kept): the
         list of styles and the ways of applying one to many cards are not shown, and no style becomes
-        the layout's default.'''
+        the layout's default."""
         self.locked = {"style": style_name, "card": card}
         self.left.grid_remove()
         self.revert_page.pack_forget()
@@ -567,7 +571,7 @@ class FramesPage(ttk.Frame):
                 part.setdefault("width", w); part.setdefault("height", h)
 
     def variant_designs(self):
-        '''The styles that are one variant's own design: made and edited in the Variants tab, not listed here.'''
+        """The styles that are one variant's own design: made and edited in the Variants tab, not listed here."""
         from . import variants
         return {variants.design_name(added.key) for added in self.project.added.values()}
 
@@ -648,6 +652,7 @@ class FramesPage(ttk.Frame):
 
     def paint_picture(self, stage, key, x, y, w, h):
         image = mod_image(self.project, self.asset(key))
+        if image and key in TINTABLE: image = tinted(image, tint_value(self.part(key).get("color")))
         if image: stage.picture(key, image, x, y, drag=key in MOVABLE, box=(x, y, w, h), high_quality=True)
         else: stage.rectangle(key, x, y, w, h, fill="#35415b", outline="#9da9bf", drag=key in MOVABLE)
 
@@ -982,12 +987,30 @@ class FramesPage(ttk.Frame):
         if not self.loading and SPECS[self.chosen][4]: set_member(self.part(self.chosen, True), "hide", self.hidden.get(), None); self.done()
 
     def set_tint(self, value):
-        '''The chosen part's tint (the swatch, and tests): 0xRRGGBB, neutral for the picture as it is.'''
+        """The chosen part's tint (the swatch, and tests): 0xRRGGBB, neutral for the picture as it is."""
         if self.loading or self.project is None or self.chosen not in TINTABLE: return
         part = self.part(self.chosen, True)
         if value is None or value == NEUTRAL_TINT: part.pop("color", None)
-        else: part["color"] = {"r": (value >> 16) & 255, "g": (value >> 8) & 255, "b": value & 255}
+        else:
+            part["color"] = {"r": (value >> 16) & 255, "g": (value >> 8) & 255, "b": value & 255}
+            self.text_asset(self.chosen)
         self.done()
+
+    def text_asset(self, key):
+        """Give a number or a word that is being colored the editor's white picture to color, when the style has
+        no picture of its own for it (the game's own numbers cannot be colored; a picture takes any color)."""
+        target = TEXT_ASSETS.get(key)
+        if target is None or self.asset(target): return
+        data = {"digits": text_presets.digits(), "atk_label": text_presets.label(False),
+                "dfd_label": text_presets.label(True)}[target]
+        name = f"{FRAME_IMAGE_DIR}/{self.style_name.get()}-{target}.png"
+        self.project.files[name] = data
+        self.set_asset(target, name)
+        if target.endswith("label"):
+            # A label's place is its own in the game (0, 0 and 16x8 left out): write the preview's.
+            x, y, w, h = self.rect(target)
+            part = self.part(target, True)
+            for member, value in (("x", x), ("y", y), ("width", w), ("height", h)): part.setdefault(member, value)
 
     def reset(self):
         key = self.chosen; path = SPECS[key][2]

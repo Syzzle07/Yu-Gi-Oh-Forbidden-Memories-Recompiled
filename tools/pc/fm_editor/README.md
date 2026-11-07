@@ -485,6 +485,12 @@ another script or font is made. The game draws the name as a one-colour shape in
 the part's tint, so a pale frame needs a dark tint on the name. **Remove the
 design** (at the top of the designer) takes the style away and gives the card the game's frame again. The star
 icons themselves (their shape) are the game's: only their place and tint change.
+The game draws its own ATK and DEF numbers by subtraction, so they cannot be
+given a color (a black tint makes them vanish on a light card). Giving the **Tint** of
+ATK value, DEF value, ATK label or DFD label a color therefore puts in the editor's
+own picture of that number or word, in white ink (`tools/pc/make_text_presets.py`
+draws them), which the tint colors: black ink on a pale frame, gold on a dark
+one. A digit strip or label picture of your own is used as it is.
 
 A variant is its own card in a deck (a deck holds three of a card and its
 variants together) and in the chest; the Library shows a card and its variants
