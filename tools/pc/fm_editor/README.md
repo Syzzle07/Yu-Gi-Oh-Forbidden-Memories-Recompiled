@@ -901,7 +901,11 @@ that the game leaves out).
   black makes black stars; the grey 808080 is the picture as it is). The **Hand** category has its
   own 52x60 preview and independently edits the hand artwork, ATK/DEF digit
   rows, and their sword/shield markers; field and Library images belong to
-  their respective game screens. The assignment panel can set a global,
+  their respective game screens. A slot with no picture of its own shows the
+  game's: the card's frame (unless the style is full-bleed and does not ask for it) and back, the hand's
+  card and the field's two (face up and face down) in the colour of the card chosen for the
+  preview, and the Library's icon in its kind's colour, so that the rest is placed on what the game
+  draws. The assignment panel can set a global,
   card-kind, printed-type, or specific-card style. Its **Reset to retail**
   buttons remove the selected assignment: a cleared card falls through to
   type, a cleared type falls through to kind, then global, and a cleared global

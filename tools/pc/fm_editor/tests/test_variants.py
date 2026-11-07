@@ -271,6 +271,37 @@ class VariantsTest(unittest.TestCase):
                 pngio.read(path)
         self.assertIn("Pillow", str(caught.exception))
 
+    def test_the_games_own_back_and_library_icon(self):
+        columns, palettes = card_icons.FRAME_COLUMNS, card_icons.CARD_PALETTES
+        right, foot = columns + card_icons.FRAME_COLUMN, columns + 2 * card_icons.FRAME_COLUMN
+        wa = bytearray(palettes + 14 * 0x200)
+        wa[right + 128 * 128] = 1                      # the right page's row 128, texel 0: the card's top left
+        wa[foot + 63 * 128 + 127] = 1                  # the foot page's row 63, texel 127: card x 127, row 191
+        wa[right + 16] = 1                             # the right edge's top: card x 128, row 0
+        wa[right + 63 * 128 + 59] = 1                  # its bottom: card x 139, row 128 + 63
+        wa[right + 5 * 128 + 5] = 1                    # in no part of the back
+        word = 31 | 8 << 5 | 16 << 10
+        wa[palettes + 9 * 0x200 + 2], wa[palettes + 9 * 0x200 + 3] = word & 255, word >> 8     # the magic frame's row
+        back = card_icons.card_back(bytes(wa), 1)
+        self.assertEqual((back.width, back.height), (140, 197))
+        pixel = lambda x, y: tuple(back.rgba[(y * 140 + x) * 4:(y * 140 + x) * 4 + 4])
+        for at in ((0, 0), (127, 191), (128, 0), (139, 191)):
+            self.assertEqual(pixel(*at), (255, 66, 132, 255), at)
+        self.assertEqual(pixel(5, 5)[3], 0)
+        self.assertEqual(pixel(0, 192)[3], 0)
+        self.assertIsNone(card_icons.card_back(b"short", 0))
+        self.assertIsNone(card_icons.card_back(bytes(wa), 6))
+        # The Library's icon: 12 x 14 at (96, 112) of its sheet, 4 bits a texel, in the row of its kind.
+        sheet, clut = card_icons.LIBRARY_ICON
+        icons = bytearray(clut + 12 * 0x20)
+        icons[sheet + 112 * 128 + 96 // 2] = 1 | 1 << 4                 # texels 96 and 97 of row 112
+        icons[clut + 6 * 0x20 + 2], icons[clut + 6 * 0x20 + 3] = word & 255, word >> 8        # magic: row 6
+        icon = card_icons.library_icon(bytes(icons), 1)
+        self.assertEqual((icon.width, icon.height), (12, 14))
+        self.assertEqual(tuple(icon.rgba[0:4])[3], 255)
+        self.assertIsNone(card_icons.library_icon(bytes(icons), 0))     # the monster's row has no color for it
+        self.assertIsNone(card_icons.library_icon(b"short", 0))
+
     def test_the_games_own_frame(self):
         # The frame sheet: a pixel of index 1 at the top left of column 0, one at the right edge of the card (column 1),
         # and the palette of the monster frame (row 8) giving index 1 a color.
@@ -956,6 +987,13 @@ class VariantsTabTest(GuiCase):
         self.assertIsNone(ui_frames.hand_frame(b"x" * 10, 9))
         page.pick("hand")
         page.draw()                       # nothing on the disc of the fixture: the plain picture, and no failure
+        for key in ("field", "field_back", "library", "hand"):
+            page.pick(key)
+            page.draw()
+        page.face.set(False)
+        page.draw()                       # the back: the game's, or the plain picture without the disc
+        self.assertIsNone(ui_frames.field_frame(None, 0))
+        self.assertIsNone(ui_frames.field_frame(b"x" * 10, 9, False, True))
 
     def test_the_layers_dialog_and_the_hands_own_picture(self):
         from fm_editor import variants_tab

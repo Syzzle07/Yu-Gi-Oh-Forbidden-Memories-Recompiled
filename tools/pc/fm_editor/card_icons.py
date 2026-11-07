@@ -66,6 +66,51 @@ def card_frame(wa: bytes, frame: int = 0):
     return pngio.Image(width, height, bytes(rgba))
 
 
+def _rgba(word: int, index: int) -> bytes:
+    """One texel: a 15-bit color (5 bits a channel, widened), clear for index 0 or a zero word."""
+    if not index or not word:
+        return bytes(4)
+    return bytes(((word & 31) << 3 | (word & 31) >> 2, (word >> 5 & 31) << 3 | (word >> 5 & 31) >> 2,
+                  (word >> 10 & 31) << 3 | (word >> 10 & 31) >> 2, 255))
+
+
+def card_back(wa: bytes, frame: int = 0):
+    """The game's own back of a card, 140 x 197 (as card_frame: the body is 192 rows), in the palette of FRAME_NAMES
+    index `frame`. The frame sheet's second and third columns of 128 texels (8 bits a texel) hold it: the lower half
+    of the second is the back's top half and its right edge, the top of the third its bottom half."""
+    palette = CARD_PALETTES + (8 + frame) * 0x200
+    right, foot = FRAME_COLUMNS + FRAME_COLUMN, FRAME_COLUMNS + 2 * FRAME_COLUMN
+    if not 0 <= frame < 6 or len(wa) < max(foot + 64 * 128, right + 256 * 128, palette + 0x200):
+        return None
+    width, height = FRAME_SIZE
+    rgba = bytearray(width * height * 4)
+
+    def put(page, sx, sy, w, h, dx, dy):
+        for y in range(h):
+            for x in range(w):
+                index = wa[page + (sy + y) * 128 + sx + x]
+                word = wa[palette + 2 * index] | wa[palette + 2 * index + 1] << 8
+                at = ((dy + y) * width + dx + x) * 4
+                rgba[at:at + 4] = _rgba(word, index)
+
+    put(right, 0, 128, 128, 128, 0, 0)       # the body's top half
+    put(foot, 0, 0, 128, 64, 0, 128)         # its bottom half
+    put(right, 16, 0, 12, 128, 128, 0)       # the right edge, top
+    put(right, 48, 0, 12, 64, 128, 128)      # and bottom
+    return pngio.Image(width, height, bytes(rgba)) if any(rgba[3::4]) else None
+
+
+LIBRARY_ICON = (17713152, 17733120)                      # the Library grid's icon sheet (4 bits a texel) and palettes
+LIBRARY_ICON_ROW = {0: 3, 1: 6, 2: 8, 3: 10}             # monster, magic, trap, ritual (FRAME_NAMES order)
+
+
+def library_icon(wa: bytes, frame: int = 0):
+    """The Library grid's plain card icon (12 x 14), tinted as the game tints the kind of `frame` (a FRAME_NAMES index;
+    the purple and orange monsters' is the monster's). What func_80029EC4 draws for a card with no icon picture."""
+    row = LIBRARY_ICON_ROW.get(frame, 3)
+    return _picture(wa, LIBRARY_ICON[0], 96, 112, 12, 14, LIBRARY_ICON[1] + row * 0x20)
+
+
 def attribute(wa: bytes, n: int):
     """Attribute n's ball (0 Light ... 5 Wind, 6 Magic, 7 Trap), 16 x 16."""
     return _picture(wa, CARD_SHEET, 16 * n, 128, 16, 16, CARD_PALETTES + BALL_PALETTE + 0x20 * n) \

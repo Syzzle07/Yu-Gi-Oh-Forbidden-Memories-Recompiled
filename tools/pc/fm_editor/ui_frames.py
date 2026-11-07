@@ -329,9 +329,9 @@ def hand_sprite(wa, u, v, width=8, height=8):
                          lambda: sheet.vram.sprite(896, 256, 8, 256, 241, u, v, width, height))
 
 
-def hand_frame(wa, frame: int = 0):
-    """The game's own 52 x 60 card of the duel hand, in the colour of FRAME_NAMES index `frame`: the duel page's sprite at
-    (0, 128) (duel_card_frame_draw.c: the face-up card, palette row 241 + the frame's colour)."""
+def duel_cell(wa, u, v, frame: int = 0):
+    """One 52 x 60 cell of the duel page (896, 256) at (`u`, `v`), in the colour of FRAME_NAMES index `frame`: palette
+    row 241 + the frame's colour."""
     if not wa or not 0 <= frame < 6:
         return None
     key = id(wa)
@@ -340,8 +340,20 @@ def hand_frame(wa, frame: int = 0):
         sheet = _hand_sheets[key] = ui_assets.DuelArt(wa)
     if not sheet.ok:
         return None
-    source = ("hand-frame", frame)
-    return sheet._cached(source, lambda: sheet.vram.sprite(896, 256, 8, 256, 241 + frame, 0, 128, 52, 60))
+    return sheet._cached(("duel-cell", u, v, frame),
+                         lambda: sheet.vram.sprite(896, 256, 8, 256, 241 + frame, u, v, 52, 60))
+
+
+def hand_frame(wa, frame: int = 0):
+    """The game's own 52 x 60 card of the duel hand, in the colour of FRAME_NAMES index `frame`: the duel page's sprite at
+    (0, 128) (duel_card_frame_draw.c: the face-up card, palette row 241 + the frame's colour)."""
+    return duel_cell(wa, 0, 128, frame)
+
+
+def field_frame(wa, frame: int = 0, monster: bool = True, face_down: bool = False):
+    """The game's own 52 x 60 card on the field: face down at (56, 128) (the same for every kind), face up at (0, 192)
+    for a monster and (56, 192) for any other card (a monster's keeps room for its ATK and DEF)."""
+    return duel_cell(wa, 56, 128, frame) if face_down else duel_cell(wa, 0 if monster else 56, 192, frame)
 
 
 class FramesPage(ttk.Frame):
@@ -687,15 +699,38 @@ class FramesPage(ttk.Frame):
             return self.part("digits", create)
         return self.style(create) if key in ("frame", "back") else self.part(key, create)
 
+    def kind_frame(self):
+        """The FRAME_NAMES index of the card kind the large preview shows."""
+        return {"monster": 0, "magic": 1, "equip": 1, "ritual": 3, "trap": 2}.get(self.preview_kind.get(), 0)
+
     def game_frame(self):
-        """The game's own frame, behind a variant's design that has no frame picture of its own (the game draws
-        it for a style with no image and no full_bleed); None otherwise, and in the UI tab."""
+        """The game's own frame, behind a style that has no frame picture of its own (the game draws it for a style
+        with no image and no full_bleed); None otherwise."""
         wa = getattr(getattr(self.tab.app, "files", None), "wa", None)
         style = self.style()
-        if self.locked is None or wa is None or style.get("image"): return None
+        if wa is None or style.get("image"): return None
         if style.get("full_bleed") is True and style.get("game_frame") is not True: return None
-        index = {"monster": 0, "magic": 1, "equip": 1, "ritual": 3, "trap": 2}.get(self.preview_kind.get(), 0)
-        return card_icons.card_frame(wa, index)
+        return card_icons.card_frame(wa, self.kind_frame())
+
+    def game_back(self):
+        """The game's own card back, for a style with no back picture of its own."""
+        wa = getattr(getattr(self.tab.app, "files", None), "wa", None)
+        if wa is None or self.asset("back"): return None
+        return card_icons.card_back(wa, self.kind_frame())
+
+    def game_small(self, key):
+        """The game's own picture of a small target (the hand's card, the field's two, the Library's icon) for a
+        style with no picture of its own; None with one. The hand and the field are in the colour of the card
+        chosen for the preview, and the Library's icon in its kind's."""
+        wa = getattr(getattr(self.tab.app, "files", None), "wa", None)
+        if wa is None or self.asset(key): return None
+        card = self.project.cards.get(self.preview_card_id()) if self.project is not None else None
+        frame = card.shown_frame() if card else 0
+        if key == "hand": return hand_frame(wa, frame)
+        if key == "library": return card_icons.library_icon(wa, frame)
+        if key in ("field", "field_back"):
+            return field_frame(wa, frame, card is None or card.is_monster(), key == "field_back")
+        return None
 
     def paint_picture(self, stage, key, x, y, w, h):
         image = mod_image(self.project, self.asset(key))
@@ -721,14 +756,13 @@ class FramesPage(ttk.Frame):
         """
         stage = self.stage
         stage.clear(); stage.rectangle(None, 0, 0, CARD_W, CARD_H, fill="#06080d")
-        if kind == "library":
-            key, w, h = "library", 24, 32
-            self.paint_picture(stage, key, (CARD_W - w) // 2, (CARD_H - h) // 2, w, h)
-            stage.outline(self.list_chosen)
-            return
-        if kind == "field":
-            key, w, h = ("field_back", 52, 60) if self.list_chosen == "field_back" else ("field", 52, 60)
-            self.paint_picture(stage, key, (CARD_W - w) // 2, (CARD_H - h) // 2, w, h)
+        if kind in ("library", "field"):
+            key, w, h = ("library", 24, 32) if kind == "library" else (
+                ("field_back", 52, 60) if self.list_chosen == "field_back" else ("field", 52, 60))
+            default = self.game_small(key)
+            if default: stage.picture(key, default, (CARD_W - w) // 2, (CARD_H - h) // 2, box=((CARD_W - w) // 2,
+                                      (CARD_H - h) // 2, w, h), high_quality=True)
+            else: self.paint_picture(stage, key, (CARD_W - w) // 2, (CARD_H - h) // 2, w, h)
             stage.outline(self.list_chosen)
             return
 
@@ -736,11 +770,8 @@ class FramesPage(ttk.Frame):
         # and markers then use the style's independent hand placements.
         x, y, w, h = (CARD_W - 52) // 2, (CARD_H - 60) // 2, 52, 60
         wa = getattr(getattr(self.tab.app, "files", None), "wa", None)
-        game_hand = None
-        if self.locked is not None and not self.asset("hand"):
-            # A card with no hand picture of its own is drawn on the game's: shown, to place the rest on it.
-            card = self.project.cards.get(self.preview_card_id())
-            game_hand = hand_frame(wa, card.shown_frame() if card else 0)
+        # A card with no hand picture of its own is drawn on the game's: shown, to place the rest on it.
+        game_hand = self.game_small("hand")
         if game_hand: stage.picture("hand", game_hand, x, y, box=(x, y, w, h), high_quality=True)
         else: self.paint_picture(stage, "hand", x, y, w, h)
         retail_art = art.in_game(self.project, wa, self.preview_card_id(), "art") if wa else None
@@ -802,8 +833,8 @@ class FramesPage(ttk.Frame):
         stage = self.stage; stage.clear(); stage.rectangle(None, 0, 0, CARD_W, CARD_H, fill="#06080d")
         frame = "frame" if self.face.get() else "back"
         fx, fy, fw, fh = self.rect(frame)
-        game_frame = self.game_frame() if frame == "frame" and not self.asset("frame") else None
-        if game_frame: stage.picture("frame", game_frame, fx, fy, box=(fx, fy, fw, fh), high_quality=True)
+        game_frame = (self.game_frame() if not self.asset("frame") else None) if frame == "frame" else self.game_back()
+        if game_frame: stage.picture(frame, game_frame, fx, fy, box=(fx, fy, fw, fh), high_quality=True)
         else: self.paint_picture(stage, frame, fx, fy, fw, fh)
         if not self.face.get(): stage.outline(self.chosen); return
         preview_kind = self.preview_kind.get()
