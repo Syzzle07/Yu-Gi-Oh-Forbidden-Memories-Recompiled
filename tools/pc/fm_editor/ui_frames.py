@@ -1078,6 +1078,12 @@ class FramesPage(ttk.Frame):
         if key in DIRECT_ASSETS: self.style().pop(path[0], None)
         else:
             self.part(key).clear()
+            if self.locked is not None:
+                # On the game's own frame the game's name, words and numbers are the parts given as it has them
+                # (left out, a full bleed draws no name or words and puts the numbers elsewhere).
+                from . import variants
+                if variants.has_game_frame(self.project, self.style_name.get()) and key in variants.GAME_FRAME_PARTS:
+                    variants.game_frame_part(self.project, self.style_name.get(), key)
         self.done()
 
     def new_style(self):

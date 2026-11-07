@@ -766,6 +766,50 @@ class VariantsTabTest(GuiCase):
         self.assertTrue(variants.has_own_design(project, other))
         self.assertEqual(errors(project), [])
 
+    def test_back_to_the_games_on_the_games_frame(self):
+        tab, project = self.app.variants, self.app.project
+        cid = tab.make(35, picture(200, 300, (30, 120, 200, 255)), None, 50, "Full", full_art=True)
+        name = variants.design_name(project.added[cid].key)
+        tab.show(cid)
+        page = tab.designer or tab.design()
+        entry = variants.styles(project)[name]
+        defaults = {key: variants.copy.deepcopy(entry[key]) if key in entry else None for key in ("title", "atk_label")}
+        defaults["atk"] = variants.copy.deepcopy(entry["digits"]["atk"])
+        defaults["def"] = variants.copy.deepcopy(entry["digits"]["def"])
+        # Each part moved, painted, or hidden, then put "back to the game's": the game's own place and ink, not
+        # nothing (which draws no name or words in a full bleed and puts the numbers in a corner).
+        page.select("title")
+        page.vars["x"].set("40"); page.typed("x")
+        page.set_tint(0xFFFFFF)
+        page.reset()
+        self.assertEqual(entry["title"], defaults["title"])
+        page.select("atk")
+        page.vars["x"].set("30"); page.typed("x")
+        page.reset()
+        self.assertEqual(entry["digits"]["atk"], defaults["atk"])
+        page.select("def")
+        page.set_tint(0x000000)
+        page.reset()
+        self.assertEqual(entry["digits"]["def"], defaults["def"])
+        page.select("atk_label")
+        page.set_tint(0x000000)
+        page.reset()
+        self.assertEqual(entry["atk_label"], defaults["atk_label"])
+        self.assertEqual(entry["digits"]["image"], f"frames/{name}-digits.png")      # the strip kept, not lost
+        self.assertEqual(errors(project), [])
+        # A design that does not keep the game's frame: "back to the game's" leaves the part out, as it did.
+        plain = tab.make(1, None, None, 50, "Plain")
+        tab.show(plain)
+        plain_page = tab.design()
+        plain_name = variants.design_name(project.added[plain].key)
+        plain_page.select("title")
+        plain_page.vars["x"].set("40"); plain_page.typed("x")
+        self.assertIn("title", variants.styles(project)[plain_name])
+        plain_page.reset()
+        self.assertNotIn("title", variants.styles(project)[plain_name])
+        self.assertFalse(variants.has_game_frame(project, plain_name))
+        self.assertTrue(variants.has_game_frame(project, name))
+
     def test_a_variants_design_is_not_listed_in_the_ui_tab(self):
         tab, project = self.app.variants, self.app.project
         cid = tab.make(1, picture(204, 192, (200, 30, 30, 255)), ("preset", "gold"), 50, "Mine")
