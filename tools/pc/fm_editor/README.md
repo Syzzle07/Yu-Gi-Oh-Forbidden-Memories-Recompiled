@@ -481,8 +481,9 @@ picture whatever its shape, as a full art card does: the card gets a design of i
 the picture laid over the whole card, as far as it covers it, centred (what is past the card's
 edge is cut off by the game). The picture is squeezed into the art's shape in the file and
 stretched back by the card's window, so the window's shape is the picture's. A card
-with no frame picture also gets its name, and white numbers (the game's own cannot be seen on a
-dark picture); one with a frame keeps it, behind the picture. The name, stars, element and
+with no frame picture keeps the game's own frame behind the picture (`game_frame`), and gets its
+name, the ATK and DFD words and the numbers in a dark ink on its stat boxes (the game's own numbers cannot be
+seen on a picture); one with a frame of its own keeps that, behind the picture. The name, stars, element and
 ATK/DEF are over the picture, and a picture with transparent parts (a figure on a clear
 background) keeps them see-through, so the frame shows behind it. In the designer the picture's
 window can then be moved and sized past the card (up to 420 x 590 units), and the preview

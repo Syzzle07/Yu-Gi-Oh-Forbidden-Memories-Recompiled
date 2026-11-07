@@ -270,17 +270,27 @@ class VariantsTest(unittest.TestCase):
         self.assertIsNone(card_icons.card_frame(bytes(wa), 6))
         # With no picture of its own the game's frame is drawn, and its picture goes where the game puts it.
         project = self.project
-        self.assertFalse(variants.has_frame_picture(project, None))
-        self.assertTrue(variants.has_frame_picture(project, ("preset", "gold")))
+        self.assertFalse(variants.window_applies(project, None))
+        self.assertTrue(variants.shows_game_frame(project, None))
+        self.assertTrue(variants.window_applies(project, ("preset", "gold")))
+        self.assertFalse(variants.shows_game_frame(project, ("preset", "gold")))
         self.assertEqual(variants.window_of_choice(project, None), variants.RETAIL_WINDOW)
         self.assertEqual(variants.window_of_choice(project, ("preset", "gold")), frame_presets.WINDOW)
         styles = variants._object(project, "card_layout", "frame_styles")
         styles["bare"] = {"hand_color": "gold", "art": {"x": 1, "y": 2, "width": 3, "height": 4}}
         styles["full"] = {"hand_color": "gold", "full_bleed": True, "art": {"x": 1, "y": 2, "width": 30, "height": 40}}
         styles["framed"] = {"hand_color": "gold", "image": "frames/x.png", "art": {"x": 5, "y": 6, "width": 7, "height": 8}}
-        self.assertFalse(variants.has_frame_picture(project, ("style", "bare")))
+        self.assertFalse(variants.window_applies(project, ("style", "bare")))
+        self.assertTrue(variants.shows_game_frame(project, ("style", "bare")))
         self.assertEqual(variants.window_of_choice(project, ("style", "bare")), variants.RETAIL_WINDOW)   # its art part is ignored
-        self.assertTrue(variants.has_frame_picture(project, ("style", "full")))
+        self.assertTrue(variants.window_applies(project, ("style", "full")))
+        self.assertFalse(variants.shows_game_frame(project, ("style", "full")))       # full bleed: no frame at all
+        styles["kept"] = {"hand_color": "gold", "full_bleed": True, "game_frame": True,
+                          "art": {"x": 1, "y": 2, "width": 50, "height": 60}}
+        self.assertTrue(variants.shows_game_frame(project, ("style", "kept")))        # unless it keeps the game's
+        self.assertTrue(variants.window_applies(project, ("style", "kept")))
+        self.assertEqual(variants.window_of_choice(project, ("style", "kept"))["width"], 50)
+        self.assertFalse(variants.shows_game_frame(project, ("style", "framed")))
         self.assertEqual(variants.window_of_choice(project, ("style", "full"))["width"], 30)
         self.assertEqual(variants.window_of_choice(project, ("style", "framed"))["width"], 7)
 
@@ -302,7 +312,10 @@ class VariantsTest(unittest.TestCase):
         # seen on a dark picture).
         self.assertIs(entry["full_bleed"], True)
         self.assertIs(entry["parts_over_art"], True)      # the name, stars and numbers show over the picture
+        self.assertIs(entry["game_frame"], True)          # on the game's own frame
         self.assertIn("title", entry)
+        self.assertEqual({k for k in ("atk_label", "dfd_label") if entry[k]["image"] in self.project.files},
+                         {"atk_label", "dfd_label"})
         self.assertEqual(entry["digits"]["image"], f"frames/{name}-digits.png")
         self.assertIn(entry["digits"]["image"], self.project.files)
         self.assertEqual(self.project.added[cid].extra["frame_style"], name)
@@ -322,6 +335,7 @@ class VariantsTest(unittest.TestCase):
         style = variants.styles(self.project)[variants.design_name("bewd-framed")]
         self.assertTrue(style["image"].startswith("frames/foil-gold"))
         self.assertNotIn("full_bleed", style)
+        self.assertNotIn("game_frame", style)             # it has a frame of its own
         self.assertIs(style["parts_over_art"], True)
         self.assertEqual(style["art"], window)
         self.assertEqual(variants.styles(self.project)["foil-gold"]["art"]["width"], 134)   # the preset is as it was

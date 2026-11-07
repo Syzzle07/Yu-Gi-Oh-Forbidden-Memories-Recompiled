@@ -664,7 +664,9 @@ class FramesPage(ttk.Frame):
         """The game's own frame, behind a variant's design that has no frame picture of its own (the game draws
         it for a style with no image and no full_bleed); None otherwise, and in the UI tab."""
         wa = getattr(getattr(self.tab.app, "files", None), "wa", None)
-        if self.locked is None or wa is None or self.style().get("full_bleed") is True: return None
+        style = self.style()
+        if self.locked is None or wa is None or style.get("image"): return None
+        if style.get("full_bleed") is True and style.get("game_frame") is not True: return None
         index = {"monster": 0, "magic": 1, "equip": 1, "ritual": 3, "trap": 2}.get(self.preview_kind.get(), 0)
         return card_icons.card_frame(wa, index)
 

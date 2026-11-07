@@ -297,21 +297,38 @@ def window_of_style(project, name) -> dict:
 RETAIL_WINDOW = {"x": 19, "y": 50, "width": 102, "height": 96}      # where the game puts a card's picture
 
 
-def has_frame_picture(project, choice) -> bool:
-    """Whether the frame `choice` is a picture of its own (a preset, a PNG, a style with an image), as against the
-    game's: the game's frame is drawn for a style with no image of its own and no full_bleed."""
+def _entry_of(project, choice):
+    return styles(project).get(choice[1]) if choice is not None and choice[0] == "style" else None
+
+
+def window_applies(project, choice) -> bool:
+    """Whether the frame `choice` places the picture itself (a preset, a PNG, a style with an image or a full
+    bleed); the game's own frame keeps the picture where the game puts it."""
     if choice is None:
         return False
     if choice[0] != "style":
         return True
-    entry = styles(project).get(choice[1])
+    entry = _entry_of(project, choice)
     return isinstance(entry, dict) and (bool(entry.get("image")) or entry.get("full_bleed") is True)
 
 
+def shows_game_frame(project, choice) -> bool:
+    """Whether the game draws its own frame for `choice`: no frame of the card's own, or a style with no image that
+    keeps it (no full_bleed, or full_bleed and game_frame)."""
+    if choice is None:
+        return True
+    if choice[0] != "style":
+        return False
+    entry = _entry_of(project, choice)
+    if not isinstance(entry, dict):
+        return True
+    return not entry.get("image") and (entry.get("full_bleed") is not True or entry.get("game_frame") is True)
+
+
 def window_of_choice(project, choice) -> dict:
-    if choice is not None and choice[0] == "style":
-        return window_of_style(project, choice[1]) if has_frame_picture(project, choice) else dict(RETAIL_WINDOW)
-    return dict(frame_presets.WINDOW) if choice is not None else dict(RETAIL_WINDOW)
+    if window_applies(project, choice):
+        return window_of_style(project, choice[1]) if choice[0] == "style" else dict(frame_presets.WINDOW)
+    return dict(RETAIL_WINDOW)
 
 
 def frame_of(project, cid: int):
@@ -400,15 +417,27 @@ def make_full_art(project, cid: int, aspect: float):
     entry["art"] = full_art_window(aspect)
     entry["parts_over_art"] = True          # the name, stars, element and ATK/DEF show over a picture past its window
     if not entry.get("image"):
+        # The game's own frame stays under the picture (game_frame): its name bar and stat boxes are where the
+        # parts below are put. The name and the numbers are drawn in a dark ink, as the game's are on that gold.
+        ink = {"r": 40, "g": 30, "b": 20}
         entry["full_bleed"] = True
-        entry.setdefault("title", {"x": 14, "y": 9})
+        entry["game_frame"] = True
+        entry.setdefault("title", {"x": 14, "y": 9, "color": dict(ink)})
         if not isinstance(entry.get("digits"), dict) or not entry["digits"].get("image"):
             file = f"{FRAME_DIR}/{name}-digits.png"
             project.files[file] = text_presets.digits()
             digits = entry.setdefault("digits", {})
             digits["image"] = file
-            digits.setdefault("atk", {"x": 112, "y": 181})
-            digits.setdefault("def", {"x": 112, "y": 191})
+            for member, value in (("width", 7), ("height", 11), ("step", 7)):    # as big as the game's, in its box
+                digits.setdefault(member, value)
+            digits.setdefault("atk", {"x": 110, "y": 164, "color": dict(ink)})
+            digits.setdefault("def", {"x": 110, "y": 179, "color": dict(ink)})
+        for key, label_x, label_y, dfd in (("atk_label", 72, 159, False), ("dfd_label", 72, 174, True)):
+            if key not in entry:
+                file = f"{FRAME_DIR}/{name}-{key}.png"
+                project.files[file] = text_presets.label(dfd)
+                entry[key] = {"image": file, "x": label_x, "y": label_y, "width": 22, "height": 11,
+                              "color": dict(ink)}
 
 
 def set_art(project, cid: int, image, whole: bool = False) -> list:
