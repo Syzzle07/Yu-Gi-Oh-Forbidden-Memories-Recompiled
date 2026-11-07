@@ -201,7 +201,18 @@ def _use_preset(project, name: str) -> str:
     return style_name
 
 
-def _use_png(project, data: bytes, stem: str) -> str:
+HAND_COLORS = ("gold", "green", "pink", "blue", "purple", "orange")      # gamedata.FRAME_NAMES' order
+
+
+def hand_color_of(project, cid: int) -> str:
+    """The colour of the card's own frame (what its type, or its own frame setting, gives it) as a "hand_color" names it:
+    the duel's hand and field draw the card in that colour, so a frame of the modder's own keeps it."""
+    card = project.cards.get(cid)
+    index = card.shown_frame() if card is not None else 0
+    return HAND_COLORS[index] if 0 <= index < len(HAND_COLORS) else HAND_COLORS[0]
+
+
+def _use_png(project, data: bytes, stem: str, hand_color: str = None) -> str:
     try:
         image = pngio.decode(data)
     except (pngio.PngError, ValueError) as problem:
@@ -216,7 +227,7 @@ def _use_png(project, data: bytes, stem: str) -> str:
     while style_name in entries and entries[style_name].get("image") != file:   # another picture's style
         style_name = f"{stem_name}-{n}"
         n += 1
-    entries.setdefault(style_name, frame_presets.style(file))
+    entries.setdefault(style_name, frame_presets.style(file, hand_color or frame_presets.CUSTOM_HAND_COLOR))
     return style_name
 
 
@@ -236,7 +247,7 @@ def set_frame(project, cid: int, choice):
             raise ValueError(f"the mod has no frame style named {choice[1]!r}")
         name = choice[1]
     elif kind == "png":
-        name = _use_png(project, choice[1], choice[2])
+        name = _use_png(project, choice[1], choice[2], hand_color_of(project, cid))
     else:
         raise ValueError(f"unknown frame choice {kind!r}")
     extra["frame_style"] = name
@@ -265,7 +276,7 @@ def own_design(project, cid: int) -> str:
     if name not in entries:
         current = added.extra.get("frame_style")
         source = entries.get(current) if isinstance(current, str) else None
-        entries[name] = copy.deepcopy(source) if isinstance(source, dict) else {"hand_color": "gold"}
+        entries[name] = copy.deepcopy(source) if isinstance(source, dict) else {"hand_color": hand_color_of(project, cid)}
     added.extra["frame_style"] = name
     return name
 

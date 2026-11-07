@@ -474,7 +474,9 @@ A card with **The game's frame** (or a design with no frame picture of its own a
 shown on the game's own frame, read from the disc (the card's own colour: monster, magic, trap, ritual,
 purple or orange; in the designer it follows the Monster / Magic / ... switch), with the picture in
 the place the game puts it (x 19, y 50, 102 x 96), so the name, stars, element and ATK and DEF can be
-placed on it. The hand's small card in the designer is on the game's own too (in the card's colour), for
+placed on it. A frame picture of your own, and a design with no frame of its own, take the card's own colour for
+the duel hand and the field (gold for a monster, green for a magic card, pink for a trap, blue for a ritual: the
+style's `hand_color`; the rainbow and gold foils have colours of their own). The hand's small card in the designer is on the game's own too (in the card's colour), for
 a design with no hand picture of its own.
 
 **Full art** (beside **Choose a picture...**, and in **New variant...**) keeps all of a

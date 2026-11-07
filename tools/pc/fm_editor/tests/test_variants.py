@@ -296,6 +296,32 @@ class VariantsTest(unittest.TestCase):
         self.assertEqual(variants.window_of_choice(project, ("style", "full"))["width"], 30)
         self.assertEqual(variants.window_of_choice(project, ("style", "framed"))["width"], 7)
 
+    def test_the_frame_colour_of_the_hand_follows_the_card(self):
+        frame_png = pngio.encode(picture(8, 16, (200, 180, 40, 255)))
+        by_type = {}
+        for cid, card in self.project.cards.items():
+            if cid <= 722 and cid not in variants.EXODIA:
+                by_type.setdefault(card.shown_frame(), cid)
+        wanted = {0: "gold", 1: "green", 2: "pink", 3: "blue"}
+        self.assertTrue(set(wanted) <= set(by_type), by_type)          # the fixture has a card of each colour
+        for index, name in wanted.items():
+            cid, _ = variants.add_variant(self.project, by_type[index], None, ("png", frame_png, f"mine-{index}"), 50, "",
+                                          key=f"colour-{index}")
+            style = variants.styles(self.project)[self.project.added[cid].extra["frame_style"]]
+            self.assertEqual(style["hand_color"], name)                  # a monster's frame is gold, a spell's green...
+            self.assertEqual(variants.hand_color_of(self.project, cid), name)
+        # A card with a frame colour of its own keeps it; the presets' own colours are theirs.
+        card = self.project.cards[by_type[0]]
+        self.project.cards[by_type[0]] = card.copy(frame=5)
+        self.assertEqual(variants.hand_color_of(self.project, by_type[0]), "orange")
+        self.project.cards[by_type[0]] = card
+        rainbow, _ = variants.add_variant(self.project, by_type[1], None, ("preset", "rainbow"), 50, "", key="rain")
+        self.assertEqual(variants.styles(self.project)["foil-rainbow"]["hand_color"], "purple")
+        # A design with no frame of its own starts in the card's colour too.
+        spell, _ = variants.add_variant(self.project, by_type[1], None, None, 50, "", key="spell-design")
+        name = variants.own_design(self.project, spell)
+        self.assertEqual(variants.styles(self.project)[name]["hand_color"], "green")
+
     def test_a_full_art_card(self):
         # A tall picture, kept whole: squeezed into the art's shape, the card's window stretches it back.
         tall = picture(200, 300, (30, 120, 200, 255))
