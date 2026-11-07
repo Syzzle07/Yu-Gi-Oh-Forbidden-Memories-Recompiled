@@ -476,7 +476,9 @@ the picture laid over the whole card, as far as it covers it, centred (what is p
 edge is cut off by the game). The picture is squeezed into the art's shape in the file and
 stretched back by the card's window, so the window's shape is the picture's. A card
 with no frame picture also gets its name, and white numbers (the game's own cannot be seen on a
-dark picture); one with a frame keeps it, behind the picture. In the designer the picture's
+dark picture); one with a frame keeps it, behind the picture. The name, stars, element and
+ATK/DEF are over the picture, and a picture with transparent parts (a figure on a clear
+background) keeps them see-through, so the frame shows behind it. In the designer the picture's
 window can then be moved and sized past the card (up to 420 x 590 units), and the preview
 cuts it at the card as the game does. The small picture of the hand and the field is the middle
 of the picture as it is.

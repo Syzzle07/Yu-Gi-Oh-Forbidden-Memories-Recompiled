@@ -384,6 +384,7 @@ def make_full_art(project, cid: int, aspect: float):
     name = own_design(project, cid)
     entry = styles(project)[name]
     entry["art"] = full_art_window(aspect)
+    entry["parts_over_art"] = True          # the name, stars, element and ATK/DEF show over a picture past its window
     if not entry.get("image"):
         entry["full_bleed"] = True
         entry.setdefault("title", {"x": 14, "y": 9})
@@ -400,6 +401,11 @@ def set_art(project, cid: int, image, whole: bool = False) -> list:
     """The variant's picture. `whole` keeps all of it, as a full art card's: the card gets its own design with
     the picture laid over the whole card (make_full_art)."""
     notes = art.set_image(project, cid, "art", image, whole)
+    extra = project.added[cid].extra
+    if whole and not image.opaque():
+        extra["art_transparent"] = True          # the game keeps the picture's clear parts clear (cards.c)
+    else:
+        extra.pop("art_transparent", None)
     if whole:
         # The small picture (the hand's, the field's) is the middle of the picture as it is: the game would make it
         # from the squeezed one, and stretch it.

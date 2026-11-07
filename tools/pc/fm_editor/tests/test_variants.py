@@ -264,6 +264,7 @@ class VariantsTest(unittest.TestCase):
         # No frame picture: the parts a card over a picture needs, and white numbers (the game's own cannot be
         # seen on a dark picture).
         self.assertIs(entry["full_bleed"], True)
+        self.assertIs(entry["parts_over_art"], True)      # the name, stars and numbers show over the picture
         self.assertIn("title", entry)
         self.assertEqual(entry["digits"]["image"], f"frames/{name}-digits.png")
         self.assertIn(entry["digits"]["image"], self.project.files)
@@ -284,8 +285,43 @@ class VariantsTest(unittest.TestCase):
         style = variants.styles(self.project)[variants.design_name("bewd-framed")]
         self.assertTrue(style["image"].startswith("frames/foil-gold"))
         self.assertNotIn("full_bleed", style)
+        self.assertIs(style["parts_over_art"], True)
         self.assertEqual(style["art"], window)
         self.assertEqual(variants.styles(self.project)["foil-gold"]["art"]["width"], 134)   # the preset is as it was
+
+    def test_a_full_art_picture_keeps_its_transparent_parts(self):
+        # A figure on a transparent background: kept see-through, so the frame behind shows around it.
+        rgba = bytearray()
+        for y in range(120):
+            for x in range(80):
+                inside = 20 <= x < 60 and 20 <= y < 100
+                rgba += bytes((200, 30, 30, 255)) if inside else bytes((0, 0, 0, 0))
+        figure = Image(80, 120, bytes(rgba))
+        cid, notes = variants.add_variant(self.project, 35, figure, ("preset", "gold"), 50, "Cut-out", key="dm-cutout",
+                                          full_art=True)
+        stored = art.state(self.project).images[(cid, "art")].image
+        self.assertFalse(stored.opaque())
+        self.assertEqual(stored.rgba[3], 0)                                        # a corner: see-through
+        middle = ((stored.height // 2) * stored.width + stored.width // 2) * 4
+        self.assertEqual(stored.rgba[middle + 3], 255)                              # the figure: solid
+        self.assertTrue(any("see-through" in n for n in notes))
+        self.assertIs(self.project.added[cid].extra["art_transparent"], True)         # the game keeps it clear
+        # The preview lays it over the frame, which shows where it is clear.
+        frame = picture(140, 197, (20, 200, 20, 255))
+        card = variants.card_picture(stored, frame, 140, variants.full_art_window(80 / 120))
+        self.assertEqual(tuple(card.rgba[0:3]), (20, 200, 20))
+        centre = ((98 * 140) + 70) * 4
+        self.assertEqual(tuple(card.rgba[centre:centre + 3]), (200, 30, 30))
+        # A picture that is not kept whole is still drawn over black, as it always was.
+        other, _ = variants.add_variant(self.project, 1, figure, None, 50, "Flat", key="bewd-flat")
+        self.assertTrue(art.state(self.project).images[(other, "art")].image.opaque())
+        self.assertNotIn("art_transparent", self.project.added[other].extra)
+        # An opaque full art picture needs no flag; a new picture takes the flag away.
+        opaque, _ = variants.add_variant(self.project, 1, picture(80, 120, (1, 2, 3, 255)), None, 50, "Solid",
+                                         key="bewd-solid", full_art=True)
+        self.assertNotIn("art_transparent", self.project.added[opaque].extra)
+        variants.set_art(self.project, cid, figure, whole=False)
+        self.assertNotIn("art_transparent", self.project.added[cid].extra)
 
     def test_the_card_picture_is_cut_at_the_card(self):
         red = picture(40, 30, (200, 20, 20, 255))

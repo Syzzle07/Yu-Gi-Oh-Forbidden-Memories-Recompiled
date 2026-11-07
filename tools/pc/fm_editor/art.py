@@ -208,13 +208,12 @@ def normalize(image: Image, part: str, whole: bool = False):
     notes = []
     w, h = SIZES[part]
     if whole and part == "art":
-        if not image.opaque():
-            image = pngio.flatten(image)
-            notes.append("its transparent pixels are drawn over black")
         scale = max(1, min(MAX_SCALE, round(max(image.width / w, image.height / h))))
         notes.append(f"all of it is kept ({image.width}x{image.height}, squeezed to {w * scale}x{h * scale}: "
                      "the card's window stretches it back)")
-        return pngio.scale_to(image, w * scale, h * scale), notes
+        if not image.opaque():
+            notes.append("its transparent parts stay see-through: what is behind the picture shows there")
+        return pngio.resample(image, w * scale, h * scale), notes
     if abs(image.width / image.height - w / h) > 0.01 * w / h:
         left, top, cw, ch = pngio.middle(image, w, h)
         image = pngio.crop(image, round(left), round(top), round(cw), round(ch))
