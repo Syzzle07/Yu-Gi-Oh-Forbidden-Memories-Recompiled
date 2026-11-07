@@ -329,6 +329,21 @@ def hand_sprite(wa, u, v, width=8, height=8):
                          lambda: sheet.vram.sprite(896, 256, 8, 256, 241, u, v, width, height))
 
 
+def hand_frame(wa, frame: int = 0):
+    """The game's own 52 x 60 card of the duel hand, in the colour of FRAME_NAMES index `frame`: the duel page's sprite at
+    (0, 128) (duel_card_frame_draw.c: the face-up card, palette row 241 + the frame's colour)."""
+    if not wa or not 0 <= frame < 6:
+        return None
+    key = id(wa)
+    sheet = _hand_sheets.get(key)
+    if sheet is None:
+        sheet = _hand_sheets[key] = ui_assets.DuelArt(wa)
+    if not sheet.ok:
+        return None
+    source = ("hand-frame", frame)
+    return sheet._cached(source, lambda: sheet.vram.sprite(896, 256, 8, 256, 241 + frame, 0, 128, 52, 60))
+
+
 class FramesPage(ttk.Frame):
     """`locked` ({"style": name, "card": id}) pins the page to one style and one card, for a window of
     its own that designs a single card (the Variants tab): the list of styles and the ways of applying
@@ -720,8 +735,14 @@ class FramesPage(ttk.Frame):
         # Duel hand: its style image is one 52x60 flat sprite.  Its artwork
         # and markers then use the style's independent hand placements.
         x, y, w, h = (CARD_W - 52) // 2, (CARD_H - 60) // 2, 52, 60
-        self.paint_picture(stage, "hand", x, y, w, h)
         wa = getattr(getattr(self.tab.app, "files", None), "wa", None)
+        game_hand = None
+        if self.locked is not None and not self.asset("hand"):
+            # A card with no hand picture of its own is drawn on the game's: shown, to place the rest on it.
+            card = self.project.cards.get(self.preview_card_id())
+            game_hand = hand_frame(wa, card.shown_frame() if card else 0)
+        if game_hand: stage.picture("hand", game_hand, x, y, box=(x, y, w, h), high_quality=True)
+        else: self.paint_picture(stage, "hand", x, y, w, h)
         retail_art = art.in_game(self.project, wa, self.preview_card_id(), "art") if wa else None
         try:
             font = card_text.RetailFont(wa) if wa else None

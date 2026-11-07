@@ -371,6 +371,60 @@ class VariantsTest(unittest.TestCase):
         variants.set_art(self.project, cid, figure, whole=False)
         self.assertNotIn("art_transparent", self.project.added[cid].extra)
 
+    def test_layered_artwork(self):
+        red = picture(10, 10, (200, 20, 20, 255))                          # the background: a solid square
+        figure_rgba = bytearray()
+        for y in range(20):
+            for x in range(10):
+                figure_rgba += bytes((20, 20, 200, 255)) if 3 <= x < 7 and 2 <= y < 18 else bytes((0, 0, 0, 0))
+        figure = Image(10, 20, bytes(figure_rgba))                          # the foreground: a figure on a clear ground
+        self.assertEqual(variants.default_layer("background", red), {"x": 19, "y": 50, "width": 102})
+        self.assertEqual(variants.default_layer("foreground", figure), {"x": 0, "y": 196 - 280, "width": 140})
+        layers = [(red, 20, 50, 100), (figure, 40, 20, 40)]
+        composed = variants.compose_layers(layers, scale=2)
+        self.assertEqual((composed.width, composed.height), (280, 392))
+        pixel = lambda x, y: tuple(composed.rgba[(y * 280 + x) * 4:(y * 280 + x) * 4 + 4])
+        self.assertEqual(pixel(2, 2), (0, 0, 0, 0))                          # no layer there: clear
+        self.assertEqual(pixel(2 * 30, 2 * 60), (200, 20, 20, 255))          # the background alone
+        self.assertEqual(pixel(2 * 60, 2 * 60), (20, 20, 200, 255))          # the figure over it
+        self.assertEqual(pixel(2 * 43, 2 * 40), (0, 0, 0, 0))                # its clear ground, above the background
+        self.assertEqual(pixel(2 * 43, 2 * 70), (200, 20, 20, 255))          # its clear ground shows the background
+        # What runs past the card is cut off, and a layer wholly outside draws nothing.
+        edge = variants.compose_layers([(red, -50, -50, 100), (red, 500, 0, 10)], scale=1)
+        self.assertEqual(tuple(edge.rgba[0:4]), (200, 20, 20, 255))
+        self.assertEqual(tuple(edge.rgba[(60 * 140 + 10) * 4:(60 * 140 + 10) * 4 + 4]), (0, 0, 0, 0))
+        # A half clear pixel over a clear one stays half clear; over a solid one it blends.
+        half = Image(1, 1, bytes((100, 100, 100, 128)))
+        blend = variants.compose_layers([(red, 0, 0, 140), (half, 0, 0, 1)], scale=1)
+        self.assertTrue(abs(blend.rgba[0] - 150) <= 2 and blend.rgba[3] == 255)
+        alone = variants.compose_layers([(half, 0, 0, 1)], scale=1)
+        self.assertEqual(alone.rgba[3], 128)
+        # Made into the variant's picture: a full art one, its layers kept in the mod for another time.
+        cid, _ = variants.add_variant(self.project, 35, None, None, 50, "Layered", key="dm-layers")
+        notes = variants.set_layers(self.project, cid, {"background": (red, {"x": 19, "y": 50, "width": 102}),
+                                                       "foreground": (figure, {"x": 40, "y": 20, "width": 40})})
+        stored = art.state(self.project).images[(cid, "art")].image
+        self.assertFalse(stored.opaque())
+        self.assertIs(self.project.added[cid].extra["art_transparent"], True)
+        self.assertTrue(variants.has_game_frame(self.project, variants.design_name("dm-layers")))
+        self.assertEqual(variants.styles(self.project)[variants.design_name("dm-layers")]["art"],
+                         {"x": 0, "y": 0, "width": 140, "height": 196})
+        again = variants.read_layers(self.project, cid)
+        self.assertEqual(sorted(again), ["background", "foreground"])
+        self.assertEqual(again["foreground"][1], {"x": 40, "y": 20, "width": 40})
+        self.assertEqual(again["background"][0].size, (10, 10))
+        # One layer alone, and the other taken away from what is kept; none is refused.
+        variants.set_layers(self.project, cid, {"background": (red, {"x": 0, "y": 0, "width": 140})})
+        self.assertEqual(sorted(variants.read_layers(self.project, cid)), ["background"])
+        with self.assertRaises(ValueError):
+            variants.set_layers(self.project, cid, {})
+        with self.assertRaises(ValueError):
+            variants.set_layers(self.project, cid, {"background": (red, {"x": 0, "y": 0, "width": 0})})
+        folder = self.root / "layers"
+        manifest.save_mod(self.project, folder)
+        self.assertTrue((folder / "art/layers/dm-layers.json").is_file())
+        self.assertEqual(errors(self.project), [])
+
     def test_the_card_picture_is_cut_at_the_card(self):
         red = picture(40, 30, (200, 20, 20, 255))
         blue = picture(30, 30, (20, 20, 200, 255))
@@ -802,6 +856,26 @@ class VariantsTabTest(GuiCase):
         plain_page = tab.design()
         self.assertFalse(variants.has_game_frame(project, variants.design_name(project.added[plain].key)))
         self.assertEqual(plain_page.defaults("atk"), ui_frames.SPECS["atk"][3])
+
+    def test_layers_in_the_tab_and_the_hand_frame(self):
+        tab, project = self.app.variants, self.app.project
+        cid = tab.make(35, None, None, 50, "Layered")
+        tab.show(cid)
+        self.assertEqual(str(tab.layers_button.cget("state")), "normal")
+        # The layers dialog's work: what the tab does after the picture is made.
+        red = picture(10, 10, (200, 20, 20, 255))
+        notes = variants.set_layers(project, cid, {"background": (red, {"x": 19, "y": 50, "width": 102})})
+        tab.after_picture(notes, "the layers")
+        name = variants.design_name(project.added[cid].key)
+        self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("", "grid"))
+        self.assertIn("layers", tab.status.cget("text"))
+        # The hand's card in the designer: the game's own, in the card's colour, when the design has none of its own.
+        page = tab.designer
+        self.assertEqual(ui_frames.hand_frame(b"", 0), None)
+        self.assertIsNone(ui_frames.hand_frame(None, 0))
+        self.assertIsNone(ui_frames.hand_frame(b"x" * 10, 9))
+        page.pick("hand")
+        page.draw()                       # nothing on the disc of the fixture: the plain picture, and no failure
 
     def test_a_variants_design_is_not_listed_in_the_ui_tab(self):
         tab, project = self.app.variants, self.app.project

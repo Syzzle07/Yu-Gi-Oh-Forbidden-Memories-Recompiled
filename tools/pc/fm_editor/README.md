@@ -474,7 +474,8 @@ A card with **The game's frame** (or a design with no frame picture of its own a
 shown on the game's own frame, read from the disc (the card's own colour: monster, magic, trap, ritual,
 purple or orange; in the designer it follows the Monster / Magic / ... switch), with the picture in
 the place the game puts it (x 19, y 50, 102 x 96), so the name, stars, element and ATK and DEF can be
-placed on it.
+placed on it. The hand's small card in the designer is on the game's own too (in the card's colour), for
+a design with no hand picture of its own.
 
 **Full art** (beside **Choose a picture...**, and in **New variant...**) keeps all of a
 picture whatever its shape, as a full art card does: the card gets a design of its own with
@@ -490,6 +491,15 @@ background) keeps them see-through, so the frame shows behind it. In the designe
 window can then be moved and sized past the card (up to 420 x 590 units), and the preview
 cuts it at the card as the game does. The small picture of the hand and the field is the middle
 of the picture as it is.
+
+**Layers...** makes the picture from two files laid into one, so a full art card needs no
+picture made beforehand: a **background** (the square of the picture) and a **foreground** (a
+figure on a clear background, say) over it. Each is placed on the card in card units (x, y and
+width, the card being 140 x 196; the first place of the background is the game's picture window, the
+foreground's the card's width down to its bottom edge) and what runs past the card is cut off. The
+preview lays them on the game's own frame. OK composes them into the card's picture as **Full art**
+does, and keeps the two files and their places in the mod (`art/layers/`) so **Layers...**
+shows them again to change; the game reads only the composed picture.
 
 **Design the card** is for a card that is more than a recolored frame. It shows
 the UI tab's Frames designer in the tab itself, beside the list, on a frame style that is this variant's alone (a

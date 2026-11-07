@@ -18,6 +18,7 @@ A frame is chosen as one of:
 from __future__ import annotations
 
 import copy
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -483,6 +484,113 @@ def over(base: pngio.Image, top: pngio.Image, left: int = 0, top_edge: int = 0) 
                     out[to + c] = (top.rgba[at + c] * a + out[to + c] * (255 - a)) // 255
             out[to + 3] = 255
     return pngio.Image(base.width, base.height, bytes(out))
+
+
+# --- layered artwork: a background and a foreground laid into one picture ----------------------------------
+
+LAYERS_DIR = "art/layers"
+LAYER_NAMES = ("background", "foreground")
+
+
+def layer_height(image, width: int) -> int:
+    return max(1, round(width * image.height / image.width))
+
+
+def default_layer(name: str, image) -> dict:
+    """Where a layer goes at first, in card units (the card is 140 x 196): the background in the game's picture
+    window, the foreground across the card's width and down to its bottom edge."""
+    if name == "background":
+        return {"x": RETAIL_WINDOW["x"], "y": RETAIL_WINDOW["y"], "width": RETAIL_WINDOW["width"]}
+    return {"x": 0, "y": frame_presets.CARD_H - layer_height(image, frame_presets.CARD_W),
+            "width": frame_presets.CARD_W}
+
+
+def compose_layers(layers, scale: int = 4) -> pngio.Image:
+    """The card-sized picture (140 x 196 units, `scale` pixels a unit) made of `layers`, bottom first: each
+    (image, x, y, width) in card units, its height from its own shape, laid by its alpha over what is under it.
+    What no layer covers stays clear, and what runs past the card's edge is cut off."""
+    width, height = frame_presets.CARD_W * scale, frame_presets.CARD_H * scale
+    out = bytearray(width * height * 4)
+    for image, x, y, layer_width in layers:
+        w = max(1, round(layer_width * scale))
+        h = max(1, round(w * image.height / image.width))
+        picture = image if (w, h) == image.size else pngio.resample(image, w, h)
+        left, top = round(x * scale), round(y * scale)
+        source = picture.rgba
+        for row in range(max(0, -top), min(h, height - top)):
+            at = ((top + row) * width + max(left, 0)) * 4
+            first = max(0, -left)
+            sat = (row * w + first) * 4
+            for _ in range(first, min(w, width - left)):
+                a = source[sat + 3]
+                if a == 255:
+                    out[at:at + 4] = source[sat:sat + 4]
+                elif a:
+                    ba = out[at + 3]
+                    if ba == 0:
+                        out[at:at + 4] = source[sat:sat + 4]
+                    else:
+                        total = a + ba * (255 - a) // 255
+                        for c in range(3):
+                            out[at + c] = (source[sat + c] * a + out[at + c] * ba * (255 - a) // 255) // total
+                        out[at + 3] = total
+                at += 4
+                sat += 4
+    return pngio.Image(width, height, bytes(out))
+
+
+def _layer_file(key: str, name: str) -> str:
+    return f"{LAYERS_DIR}/{key}-{name}.png"
+
+
+def read_layers(project, cid: int) -> dict:
+    """The layers a variant's picture was made of: {name: (image, {"x", "y", "width"})}; {} when it was not."""
+    key = project.added[cid].key
+    data = _held(project, f"{LAYERS_DIR}/{key}.json")
+    if data is None:
+        return {}
+    try:
+        spec = json.loads(data.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return {}
+    found = {}
+    for name in LAYER_NAMES:
+        place = spec.get(name) if isinstance(spec, dict) else None
+        picture = _held(project, _layer_file(key, name))
+        if not isinstance(place, dict) or picture is None:
+            continue
+        numbers = {k: place[k] for k in ("x", "y", "width") if isinstance(place.get(k), (int, float))}
+        try:
+            image = pngio.decode(picture)
+        except (pngio.PngError, ValueError):
+            continue
+        if len(numbers) == 3:
+            found[name] = (image, numbers)
+    return found
+
+
+def set_layers(project, cid: int, layers: dict) -> list:
+    """The variant's picture made of `layers` ({name: (image, {"x", "y", "width"})}, a background and/or a
+    foreground): they are kept in the mod (art/layers/) to be changed again, composed into one picture, and
+    the card made a full art one (set_art) with that picture. Notes on the picture."""
+    chosen = [(name, *layers[name]) for name in LAYER_NAMES if layers.get(name)]
+    if not chosen:
+        raise ValueError("choose a picture for at least one layer")
+    for name, image, place in chosen:
+        if place["width"] < 1:
+            raise ValueError(f"the {name}'s width is at least 1 unit")
+    key = project.added[cid].key
+    composed = compose_layers([(image, p["x"], p["y"], p["width"]) for _, image, p in chosen])
+    notes = set_art(project, cid, composed, whole=True)
+    spec = {}
+    for name, image, place in chosen:
+        project.files[_layer_file(key, name)] = pngio.encode(image)
+        spec[name] = {"x": place["x"], "y": place["y"], "width": place["width"]}
+    project.files[f"{LAYERS_DIR}/{key}.json"] = json.dumps(spec, indent=1).encode("utf-8")
+    for name in LAYER_NAMES:                                  # a layer taken away is not kept
+        if name not in spec:
+            project.files.pop(_layer_file(key, name), None)
+    return notes
 
 
 def card_picture(art_image, frame_image, width: int = 140, window: dict = None) -> pngio.Image:

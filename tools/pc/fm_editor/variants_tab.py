@@ -159,6 +159,8 @@ class VariantsTab(Tab):
         self.whole = tk.BooleanVar(value=False)
         self.whole_check = ttk.Checkbutton(pictures, text="Full art", variable=self.whole)
         self.whole_check.pack(side="left", padx=(6, 0))
+        self.layers_button = ttk.Button(pictures, text="Layers...", command=self.layers)
+        self.layers_button.pack(side="left", padx=(4, 0))
         self.plate_button = ttk.Button(pictures, text="Name plate...", command=self.choose_plate)
         self.plate_button.pack(side="left", padx=(4, 0))
         self.apply_button = ttk.Button(form, text="Apply", command=self.apply)
@@ -231,7 +233,7 @@ class VariantsTab(Tab):
         self.current = cid if cid is not None and project is not None and variants.is_variant(project, cid) else None
         on = self.current is not None
         for widget in (self.remove_button, self.picture_button, self.plate_button, self.design_button,
-                       self.apply_button, self.whole_check):
+                       self.apply_button, self.whole_check, self.layers_button):
             widget.state(["!disabled"] if on else ["disabled"])
         self.status.configure(text="")
         if not on:
@@ -361,6 +363,108 @@ class VariantsTab(Tab):
         self.show_right(force=True)
         self.status.configure(text=f"{Path(path).name} is the picture" + (": " + "; ".join(notes) if notes else "."))
         return True
+
+    def layers(self):
+        """The picture made of a background and a foreground, each its own file, placed on the card here."""
+        cid = self.current
+        if cid is None:
+            return
+        found = variants.read_layers(self.project, cid)
+        state = {name: {"image": found[name][0] if name in found else None,
+                        "place": dict(found[name][1]) if name in found else None,
+                        "label": "kept in the mod" if name in found else "none"}
+                 for name in variants.LAYER_NAMES}
+        fields = {}
+
+        def build(dialog, body):
+            ttk.Label(body, text="Two pictures laid into one: the background, and the foreground over it (a figure on "
+                                 "a clear background, say). Their places are in card units (the card is 140 x 196); "
+                                 "what runs past the card is cut off.", style="Hint.TLabel",
+                      wraplength=px(self, 380), justify="left").grid(row=0, column=0, columnspan=6, sticky="w")
+            for row, name in enumerate(variants.LAYER_NAMES, 1):
+                ttk.Label(body, text=name.capitalize()).grid(row=row * 2 - 1, column=0, sticky="w", pady=(8, 0))
+                ttk.Button(body, text="Choose...", command=lambda n=name: choose(dialog, n)).grid(
+                    row=row * 2 - 1, column=1, sticky="w", padx=4, pady=(8, 0))
+                state[name]["text"] = ttk.Label(body, text=state[name]["label"], style="Hint.TLabel")
+                state[name]["text"].grid(row=row * 2 - 1, column=2, columnspan=4, sticky="w", pady=(8, 0))
+                fields[name] = {}
+                for column, key in enumerate(("x", "y", "width")):
+                    ttk.Label(body, text=key.capitalize()).grid(row=row * 2, column=column * 2, sticky="e")
+                    var = tk.StringVar(value=str(state[name]["place"][key]) if state[name]["place"] else "")
+                    box = ttk.Spinbox(body, from_=-400, to=800, width=6, textvariable=var,
+                                      command=lambda: draw(dialog))
+                    box.grid(row=row * 2, column=column * 2 + 1, sticky="w", padx=(2, 8))
+                    box.bind("<Return>", lambda e: draw(dialog))
+                    box.bind("<FocusOut>", lambda e: draw(dialog))
+                    fields[name][key] = var
+            dialog.preview = ttk.Label(body)
+            dialog.preview.grid(row=0, column=6, rowspan=6, padx=(14, 0))
+            dialog.photo = None
+            draw(dialog)
+
+        def place_of(name):
+            try:
+                return {key: float(fields[name][key].get()) for key in ("x", "y", "width")}
+            except ValueError:
+                return None
+
+        def chosen():
+            out = {}
+            for name in variants.LAYER_NAMES:
+                place = place_of(name)
+                if state[name]["image"] is not None and place is not None:
+                    out[name] = (state[name]["image"], place)
+            return out
+
+        def choose(dialog, name):
+            path = file_dialogs.askopenfilename(parent=dialog, title=f"The {name}",
+                                                filetypes=[("Pictures", "*.png *.jpg *.jpeg"), ("PNG images", "*.png"),
+                                                           ("All files", "*.*")])
+            if not path:
+                return
+            try:
+                state[name]["image"] = pngio.read(path)
+            except (OSError, pngio.PngError, ValueError) as problem:
+                messagebox.showerror("FM Editor", f"Could not use {path}: {problem}", parent=dialog)
+                return
+            state[name]["text"].configure(text=Path(path).name)
+            for key, value in variants.default_layer(name, state[name]["image"]).items():
+                fields[name][key].set(str(value))
+            draw(dialog)
+
+        def draw(dialog):
+            layers = chosen()
+            composed = variants.compose_layers([(image, p["x"], p["y"], p["width"])
+                                                for name, (image, p) in ((n, layers[n]) for n in variants.LAYER_NAMES
+                                                                         if n in layers)], scale=2)
+            frame = None
+            base = self.project.base_of(self.current)
+            if self.wa is not None:
+                frame = card_icons.card_frame(self.wa, self.project.cards[base].shown_frame())
+            card = variants.card_picture(composed, frame, px(self, PREVIEW_W), {"x": 0, "y": 0, "width": 140, "height": 196})
+            dialog.photo = photo(dialog, card)
+            dialog.preview.configure(image=dialog.photo)
+
+        def ok(dialog):
+            layers = chosen()
+            try:
+                notes = variants.set_layers(self.project, cid, layers)
+            except ValueError as problem:
+                return str(problem)
+            self.after_picture(notes, "the layers")
+            return None
+
+        FormDialog(self, "Layers", build, ok)
+
+    def after_picture(self, notes, what):
+        """The tab, shown again after the chosen variant's picture was made (the picture button, the layers)."""
+        self.app.changed()
+        self.fill()
+        self.tree.selection_set(str(self.current))
+        self.frames.reload(variants.frame_of(self.project, self.current))
+        self.draw()
+        self.show_right(force=True)
+        self.status.configure(text=f"{what} are the picture" + (": " + "; ".join(notes) if notes else "."))
 
     def choose_plate(self):
         cid = self.current
