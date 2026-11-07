@@ -285,7 +285,7 @@ class VariantsTest(unittest.TestCase):
         back = card_icons.card_back(bytes(wa), 1)
         self.assertEqual((back.width, back.height), (140, 197))
         pixel = lambda x, y: tuple(back.rgba[(y * 140 + x) * 4:(y * 140 + x) * 4 + 4])
-        for at in ((0, 0), (127, 191), (128, 0), (139, 191)):
+        for at in ((0, 0), (127, 191), (128, 0), (139, 191), (0, 195)):     # the last turned over from the top's
             self.assertEqual(pixel(*at), (255, 66, 132, 255), at)
         self.assertEqual(pixel(5, 5)[3], 0)
         self.assertEqual(pixel(0, 192)[3], 0)
@@ -308,19 +308,27 @@ class VariantsTest(unittest.TestCase):
         base, palettes = card_icons.CARD_SHEET - 3 * 0x8000, card_icons.CARD_PALETTES
         wa = bytearray(palettes + 14 * 0x200)
         wa[base] = 1
-        wa[base + 0x8000 + 11] = 1                                    # card x 128 + 11 = 139, row 0
+        wa[base + 0x8000 + 4] = 1                                     # the right edge's first texel: card x 128, row 0
+        wa[base + 0x8000 + 67 * 128 + 47] = 1                         # the lower edge's last: card x 139, row 128 + 67
         wa[base + 191 * 128] = 1                                      # the body's last row
-        wa[base + 192 * 128] = 1                                      # past the card's body: not in it
+        wa[base + 192 * 128 + 5] = 1                                  # past the card's body: the left page's, not in it
+        wa[base + 208 * 128 + 2] = 1                                  # a non-monster's panel, from the left page's row 208
         word = 31 | 8 << 5 | 16 << 10                                 # 5 bits a channel
         wa[palettes + 8 * 0x200 + 2], wa[palettes + 8 * 0x200 + 3] = word & 255, word >> 8
         frame = card_icons.card_frame(bytes(wa), 0)
         self.assertEqual((frame.width, frame.height), (140, 197))
         pixel = lambda x, y: tuple(frame.rgba[(y * 140 + x) * 4:(y * 140 + x) * 4 + 4])
         self.assertEqual(pixel(0, 0), (255, 66, 132, 255))
-        self.assertEqual(pixel(139, 0)[3], 255)
+        self.assertEqual(pixel(128, 0)[3], 255)
+        self.assertEqual(pixel(139, 195)[3], 255)                     # the edge reaches the card's last row
         self.assertEqual(pixel(0, 191)[3], 255)
-        self.assertEqual(pixel(0, 192)[3], 0)                         # the card is 192 rows of the 197
+        self.assertEqual(pixel(5, 192)[3], 0)                         # the page's row 192 is not the card's
+        self.assertEqual(pixel(0, 195)[3], 255)                       # the bottom border is the top one turned over
+        self.assertEqual(pixel(0, 196)[3], 0)                         # the card is 196 rows of the 197
         self.assertEqual(pixel(5, 5)[3], 0)                           # index 0 is clear
+        self.assertEqual(pixel(2, 144)[3], 0)                         # a monster's plaque has no panel's row
+        panel = card_icons.card_frame(bytes(wa), 0, False)
+        self.assertEqual(panel.rgba[(144 * 140 + 2) * 4 + 3], 255)    # a card that is not one has it
         self.assertIsNone(card_icons.card_frame(b"short", 0))
         self.assertIsNone(card_icons.card_frame(bytes(wa), 6))
         # With no picture of its own the game's frame is drawn, and its picture goes where the game puts it.

@@ -307,7 +307,8 @@ class VariantsTab(Tab):
         frame = self.frames.frame_image()
         window = variants.window_of_choice(self.project, choice)
         if frame is None and variants.shows_game_frame(self.project, choice) and self.wa is not None:
-            frame = card_icons.card_frame(self.wa, self.project.cards[self.project.base_of(self.current)].shown_frame())
+            base = self.project.cards[self.project.base_of(self.current)]
+            frame = card_icons.card_frame(self.wa, base.shown_frame(), base.is_monster())
         card = variants.card_picture(self.picture_of(self.current), frame, px(self, PLAIN_W), window)
         self.photo = photo(self, card)
         self.preview.configure(image=self.photo)
@@ -487,7 +488,7 @@ class VariantsTab(Tab):
             frame_index = self.project.cards[base].shown_frame()
             if mode.get() == "card":
                 composed = variants.compose_layers(chosen("card"), scale=2)
-                frame = card_icons.card_frame(self.wa, frame_index) if self.wa is not None else None
+                frame = card_icons.card_frame(self.wa, frame_index, self.project.cards[base].is_monster()) if self.wa is not None else None
                 picture = variants.card_picture(composed, frame, px(self, PREVIEW_W),
                                                 {"x": 0, "y": 0, "width": 140, "height": 196})
             else:
@@ -661,7 +662,8 @@ class VariantsTab(Tab):
             window = variants.window_of_choice(self.project, choice)
             frame = dialog.frames.frame_image()
             if frame is None and variants.shows_game_frame(self.project, choice) and self.wa is not None and base:
-                frame = card_icons.card_frame(self.wa, self.project.cards[base].shown_frame())
+                frame = card_icons.card_frame(self.wa, self.project.cards[base].shown_frame(),
+                                              self.project.cards[base].is_monster())
             if dialog.whole.get() and state["image"] is not None:       # all of the picture, over the card
                 window = variants.full_art_window(image.width / image.height)
             card = variants.card_picture(image, frame, px(self, PREVIEW_W), window)

@@ -33,37 +33,54 @@ def _picture(wa: bytes, base: int, u: int, v: int, width: int, height: int, pale
 
 
 FRAME_COLUMNS, FRAME_COLUMN = CARD_SHEET - 3 * 0x8000, 0x8000    # the frame sheet's two 128-texel columns
-FRAME_EDGE_ROWS = 124                                             # the rows of column 1 that are the card's edge
-FRAME_SIZE, FRAME_CARD_ROWS = (140, 197), 192                     # a card: 140 wide, its body 192 rows of the 197
+FRAME_SIZE = (140, 197)                                           # a card: 140 wide, 196 rows (and one clear)
 
 
-def card_frame(wa: bytes, frame: int = 0):
-    """The game's own frame of a card as it draws it, 140 x 197 (the rest of the card's size below its body is
-    clear): `frame` is a gamedata.FRAME_NAMES index (monster, magic, trap, ritual, purple, orange). The picture's
-    window is black in it. Cut from the frame sheet of WA_MRG.MRG, where the card is the top left of two columns
-    of 128 texels, in its own palette row (8 + frame)."""
+def _texels(wa: bytes, page: int, palette: int, sx: int, sy: int, w: int, h: int, flip: bool = False):
+    """The rows of a w x h piece of a frame sheet page (8 bits a texel, 128 a row) as RGBA texels, top to bottom
+    (bottom to top with `flip`)."""
+    rows = []
+    for y in range(h):
+        row = bytearray()
+        for x in range(w):
+            index = wa[page + (sy + y) * 128 + sx + x]
+            row += _rgba(wa[palette + 2 * index] | wa[palette + 2 * index + 1] << 8, index)
+        rows.append(bytes(row))
+    return rows[::-1] if flip else rows
+
+
+def _cut_card(wa: bytes, frame: int, pieces):
+    """A 140 x 197 card out of the frame sheet's pieces: (page, sx, sy, w, h, dx, dy[, flip]) each. Its last row
+    stays clear: the card is 196 rows."""
     palette = CARD_PALETTES + (8 + frame) * 0x200
-    width, height = FRAME_SIZE
-    if not 0 <= frame < 6 or len(wa) < max(FRAME_COLUMNS + 2 * FRAME_COLUMN, palette + 0x200):
+    right, foot = FRAME_COLUMNS + FRAME_COLUMN, FRAME_COLUMNS + 2 * FRAME_COLUMN
+    pages = (FRAME_COLUMNS, right, foot)
+    if not 0 <= frame < 6 or len(wa) < max(foot + 64 * 128, right + 256 * 128, palette + 0x200):
         return None
+    width, height = FRAME_SIZE
     rgba = bytearray(width * height * 4)
-    for y in range(FRAME_CARD_ROWS):
-        for x in range(width):
-            column, tu = divmod(x, 128)
-            row = y
-            if column and y >= FRAME_EDGE_ROWS:
-                # The second column holds the card's right edge for the top rows only (the card back is below):
-                # lower down the same border is taken from rows above, the bottom shadow from the column beside.
-                row = y - 64 if y < FRAME_CARD_ROWS - 8 else None
-            if row is None:
-                column, tu, row = 0, 127, y
-            index = wa[FRAME_COLUMNS + column * FRAME_COLUMN + row * 128 + tu]
-            word = wa[palette + 2 * index] | wa[palette + 2 * index + 1] << 8
-            if index and word:
-                at = (y * width + x) * 4
-                rgba[at:at + 4] = bytes(((word & 31) << 3 | (word & 31) >> 2, (word >> 5 & 31) << 3 | (word >> 5 & 31) >> 2,
-                                         (word >> 10 & 31) << 3 | (word >> 10 & 31) >> 2, 255))
-    return pngio.Image(width, height, bytes(rgba))
+    for piece in pieces:
+        page, sx, sy, w, h, dx, dy = piece[:7]
+        for y, row in enumerate(_texels(wa, pages[page], palette, sx, sy, w, h, len(piece) > 7 and piece[7])):
+            at = ((dy + y) * width + dx) * 4
+            rgba[at:at + 4 * w] = row
+    return pngio.Image(width, height, bytes(rgba)) if any(rgba[3::4]) else None
+
+
+def card_frame(wa: bytes, frame: int = 0, monster: bool = True):
+    """The game's own frame of a card as it draws it, 140 x 197 (its last row is clear: the card is 196 rows):
+    `frame` is a gamedata.FRAME_NAMES index (monster, magic, trap, ritual, purple, orange), `monster` says whether
+    it has a monster's plaque for ATK and DEF (every other card has a larger panel there). The picture's window is
+    black in it. Cut from the frame sheet of WA_MRG.MRG, where the card is the left page's top 128 x 192 texels in
+    its own palette row (8 + frame), its right edge two 12-texel strips of the second page, its bottom border the
+    top border turned over. (The same pieces as the 0.1.3 editor's, which found where they are.)"""
+    pieces = [(0, 0, 0, 128, 192, 0, 0),                    # the body
+              (1, 4, 0, 12, 128, 128, 0),                   # the right edge, top
+              (1, 36, 0, 12, 68, 128, 128),                 # and bottom, down to the card's last row
+              (0, 0, 0, 128, 4, 0, 192, True)]              # the bottom border: the top one, turned over
+    if not monster:
+        pieces.insert(1, (0, 0, 208, 128, 48, 0, 144))      # the larger panel in the plaque's place
+    return _cut_card(wa, frame, pieces)
 
 
 def _rgba(word: int, index: int) -> bytes:
@@ -75,29 +92,14 @@ def _rgba(word: int, index: int) -> bytes:
 
 
 def card_back(wa: bytes, frame: int = 0):
-    """The game's own back of a card, 140 x 197 (as card_frame: the body is 192 rows), in the palette of FRAME_NAMES
-    index `frame`. The frame sheet's second and third columns of 128 texels (8 bits a texel) hold it: the lower half
-    of the second is the back's top half and its right edge, the top of the third its bottom half."""
-    palette = CARD_PALETTES + (8 + frame) * 0x200
-    right, foot = FRAME_COLUMNS + FRAME_COLUMN, FRAME_COLUMNS + 2 * FRAME_COLUMN
-    if not 0 <= frame < 6 or len(wa) < max(foot + 64 * 128, right + 256 * 128, palette + 0x200):
-        return None
-    width, height = FRAME_SIZE
-    rgba = bytearray(width * height * 4)
-
-    def put(page, sx, sy, w, h, dx, dy):
-        for y in range(h):
-            for x in range(w):
-                index = wa[page + (sy + y) * 128 + sx + x]
-                word = wa[palette + 2 * index] | wa[palette + 2 * index + 1] << 8
-                at = ((dy + y) * width + dx + x) * 4
-                rgba[at:at + 4] = _rgba(word, index)
-
-    put(right, 0, 128, 128, 128, 0, 0)       # the body's top half
-    put(foot, 0, 0, 128, 64, 0, 128)         # its bottom half
-    put(right, 16, 0, 12, 128, 128, 0)       # the right edge, top
-    put(right, 48, 0, 12, 64, 128, 128)      # and bottom
-    return pngio.Image(width, height, bytes(rgba)) if any(rgba[3::4]) else None
+    """The game's own back of a card, 140 x 197 as card_frame, in the palette of FRAME_NAMES index `frame`. The
+    frame sheet's second and third pages hold it: the lower half of the second is the back's top half and its right
+    edge, the top of the third its bottom half; the bottom border is the top one turned over."""
+    return _cut_card(wa, frame, [(1, 0, 128, 128, 128, 0, 0),         # the top half
+                                 (2, 0, 0, 128, 64, 0, 128),          # the bottom half
+                                 (1, 16, 0, 12, 128, 128, 0),         # the right edge, top
+                                 (1, 48, 0, 12, 68, 128, 128),        # and bottom
+                                 (1, 0, 128, 128, 4, 0, 192, True)])  # the bottom border
 
 
 LIBRARY_ICON = (17713152, 17733120)                      # the Library grid's icon sheet (4 bits a texel) and palettes

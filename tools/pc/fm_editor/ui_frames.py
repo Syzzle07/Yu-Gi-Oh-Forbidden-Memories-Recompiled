@@ -309,6 +309,25 @@ def digit_cell(strip, digit, dim=False):
 _hand_sheets = {}
 
 
+def stat_sprite(wa, part):
+    """The game's own ATK or DFD word ("atk_label", "dfd_label": 24 x 12) or digit (0 to 9: 6 x 13) of its card, from the
+    duel page (960, 256) at 4 bits through palette row 249, which is dark on the gold plaque (the game draws them
+    with the plaque's colour taken away from them, so they cannot be colored); None without the disc."""
+    cell = {"atk_label": (0, 206, 24, 12), "dfd_label": (0, 218, 24, 12)}.get(part)
+    if cell is None and isinstance(part, int) and 0 <= part <= 9:
+        cell = (16 + part * 6, 144, 6, 13)
+    if not wa or cell is None:
+        return None
+    key = id(wa)
+    sheet = _hand_sheets.get(key)
+    if sheet is None:
+        sheet = _hand_sheets[key] = ui_assets.DuelArt(wa)
+    if not sheet.ok:
+        return None
+    u, v, width, height = cell
+    return sheet._cached(("stat", part), lambda: sheet.vram.sprite(960, 256, 4, 496, 249, u, v, width, height))
+
+
 def hand_sprite(wa, u, v, width=8, height=8):
     if not wa:
         return None
@@ -647,10 +666,20 @@ class FramesPage(ttk.Frame):
 
     def defaults(self, key):
         """(x, y, width, height) of `key` when the style leaves it out: the game's on a card that keeps its frame."""
-        if self.locked is not None and key in GAME_FRAME_DEFAULTS:
-            from . import variants
-            if variants.has_game_frame(self.project, self.style_name.get()): return GAME_FRAME_DEFAULTS[key]
+        if key in GAME_FRAME_DEFAULTS and self.keeps_game_frame():
+            return GAME_FRAME_DEFAULTS[key]
         return SPECS[key][3]
+
+
+    def keeps_game_frame(self):
+        """Whether the style leaves the game's frame (and so the game's own name, words and numbers, in its places)
+        as it is. A variant's design says so with game_frame; a style of the UI tab, by having no frame picture and
+        not being a full-bleed one that does not ask for the game's frame."""
+        style = self.style()
+        if self.locked is not None:
+            from . import variants
+            return variants.has_game_frame(self.project, self.style_name.get())
+        return not style.get("image") and (style.get("full_bleed") is not True or style.get("game_frame") is True)
 
     def rect(self, key):
         _, _, _, _, _, resize = SPECS[key]
@@ -710,7 +739,7 @@ class FramesPage(ttk.Frame):
         style = self.style()
         if wa is None or style.get("image"): return None
         if style.get("full_bleed") is True and style.get("game_frame") is not True: return None
-        return card_icons.card_frame(wa, self.kind_frame())
+        return card_icons.card_frame(wa, self.kind_frame(), self.preview_kind.get() == "monster")
 
     def game_back(self):
         """The game's own card back, for a style with no back picture of its own."""
@@ -939,6 +968,16 @@ class FramesPage(ttk.Frame):
                                       box=(dx, y, digit_w, digit_h), high_quality=True)
                 stage.boxes[key] = (x, y, w, h)
                 stage.draggable.add(key)
+            elif key in ("atk", "def") and stat_sprite(wa, int(text[0])):
+                # The game's own digits (6 wide, 13 high), where the style has no strip of its own.
+                step = as_int(self.part("digits").get("step"), digit_w)
+                for n, char in enumerate(text):
+                    stage.picture((key, n), stat_sprite(wa, int(char)), x + n * step, y, drag=False,
+                                  box=(x + n * step, y, digit_w, digit_h), high_quality=True)
+                stage.boxes[key] = (x, y, w, h)
+                stage.draggable.add(key)
+            elif key in ("atk_label", "dfd_label") and stat_sprite(wa, key):
+                stage.picture(key, stat_sprite(wa, key), x, y, box=(x, y, w, h), high_quality=True)
             elif key == "title":
                 picture = title_plate_picture(text, w, h, color)
                 if picture:
