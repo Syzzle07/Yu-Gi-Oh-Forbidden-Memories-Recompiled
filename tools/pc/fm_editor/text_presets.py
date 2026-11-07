@@ -9,6 +9,14 @@ def digits() -> bytes:
     return base64.b64decode("".join(text_presets_data.DIGITS))
 
 
+SHAPES = (("star", "Star"), ("diamond", "Diamond"), ("heart", "Heart"), ("disc", "Disc"))
+
+
+def star(name: str) -> bytes:
+    """A level star's picture, white ink: star, diamond, heart or disc."""
+    return base64.b64decode("".join(getattr(text_presets_data, "STAR_" + name.upper())))
+
+
 def label(dfd: bool) -> bytes:
     """The word ATK (or DFD) as a picture."""
     return base64.b64decode("".join(text_presets_data.DFD if dfd else text_presets_data.ATK))

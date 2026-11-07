@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from fm_editor import compat, frame_presets, manifest, pngio, ui_frames, validate, variants
+from fm_editor import compat, frame_presets, manifest, pngio, text_presets, ui_frames, validate, variants
 from fm_editor.model import Project, replaced
 from fm_editor.pngio import Image
 from fm_editor.tests.test_data import fixture
@@ -550,6 +550,48 @@ class VariantsTabTest(GuiCase):
         # The preview draws a colored picture colored.
         self.assertEqual(len(ui_frames.TEXT_ASSETS), 4)
         # The game reads what was written: no error from the checks.
+        self.assertEqual(errors(project), [])
+
+    def test_the_shape_of_the_stars(self):
+        tab, project = self.app.variants, self.app.project
+        cid = tab.make(1, picture(204, 192, (200, 30, 30, 255)), None, 50, "Mine")
+        name = variants.design_name(project.added[cid].key)
+        tab.show(cid)
+        page = tab.design()
+        entries = project.other["card_layout"]["frame_styles"]
+        page.select("stars")
+        self.assertEqual(page.shape.get(), "The game's")
+        self.assertEqual(page.shapes.winfo_manager(), "grid")
+        self.assertNotIn("image", entries[name].get("stars", {}))
+        # A shape of the editor's: its white picture in frames/, which the tint colors.
+        page.shape.set("Heart")
+        page.shape_chosen()
+        stars = entries[name]["stars"]
+        self.assertEqual(stars["image"], f"frames/{name}-stars.png")
+        self.assertEqual(project.files[stars["image"]], text_presets.star("heart"))
+        self.assertEqual(page.shape.get(), "Heart")
+        page.set_tint(0x4060FF)
+        self.assertEqual(entries[name]["stars"]["color"], {"r": 0x40, "g": 0x60, "b": 0xFF})
+        self.assertEqual(entries[name]["stars"]["image"], stars["image"])        # the tint keeps the shape
+        page.shape.set("Star")
+        page.shape_chosen()
+        self.assertEqual(project.files[entries[name]["stars"]["image"]], text_presets.star("star"))
+        # A picture of one's own is told apart from the shapes.
+        project.files["frames/own.png"] = picture(16, 16, (255, 255, 255, 255))
+        entries[name]["stars"]["image"] = "frames/own.png"
+        page.fill_form()
+        self.assertEqual(page.shape.get(), "My own picture")
+        # Back to the game's own star: no picture, the tint stays.
+        page.shape.set("The game's")
+        page.shape_chosen()
+        self.assertNotIn("image", entries[name]["stars"])
+        self.assertIn("color", entries[name]["stars"])
+        self.assertEqual(len(text_presets.SHAPES), 4)
+        for shape, _ in text_presets.SHAPES:
+            self.assertEqual(pngio.decode(text_presets.star(shape)).size, (64, 64))
+        # Other parts have no shape to choose.
+        page.select("art")
+        self.assertEqual(page.shapes.winfo_manager(), "")
         self.assertEqual(errors(project), [])
 
     def test_a_variants_design_is_not_listed_in_the_ui_tab(self):

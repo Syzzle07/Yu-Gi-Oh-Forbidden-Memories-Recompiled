@@ -483,8 +483,10 @@ digits. **Name plate...** gives the card a name picture of its own (96x14 units,
 to 4x) in place of the name the game sets in its own lettering: that is how a name in
 another script or font is made. The game draws the name as a one-colour shape in
 the part's tint, so a pale frame needs a dark tint on the name. **Remove the
-design** (at the top of the designer) takes the style away and gives the card the game's frame again. The star
-icons themselves (their shape) are the game's: only their place and tint change.
+design** (at the top of the designer) takes the style away and gives the card the game's frame again. For
+**Level stars**, **Star shape** is the game's own round star, or a star, a diamond, a heart or a plain disc
+(white pictures of the editor's own, `tools/pc/make_text_presets.py` draws them, which the Tint colors), or a
+picture of your own (**Choose PNG...**).
 The game draws its own ATK and DEF numbers by subtraction, so they cannot be
 given a color (a black tint makes them vanish on a light card). Giving the **Tint** of
 ATK value, DEF value, ATK label or DFD label a color therefore puts in the editor's

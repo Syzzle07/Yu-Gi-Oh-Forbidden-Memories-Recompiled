@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""Make the FM Editor's own card numbers and labels (tools/pc/fm_editor/text_presets_data.py).
+"""Make the FM Editor's own card numbers, labels and level stars (tools/pc/fm_editor/text_presets_data.py).
 
 The game draws a card's ATK and DEF numbers by subtraction, so they can only darken what is behind them and take no
 color of their own. A style that draws its numbers and its "ATK"/"DFD" words from pictures does: the style's
 "color" multiplies the picture, so a picture of white ink takes any color. The Variants tab's card designer uses these
 white pictures when a modder colors the numbers or the words.
 
-Written with Pillow's own font (Aileron, public domain), as PNGs inside a Python module (a packaged editor carries
+The level stars are shapes (a star, a diamond, a heart, a plain disc) in the same white ink: the style's "stars"
+"color" colors them. Written with Pillow's own font (Aileron, public domain), as PNGs inside a Python module (a packaged editor carries
 Python modules, not loose files). The editor needs no Pillow for it, and is not changed by running this again:
 
     python tools/pc/make_text_presets.py
 """
 import base64
 import io
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -75,6 +77,44 @@ def label(text: str) -> bytes:
     return png(Image.merge("RGBA", (Image.new("L", alpha.size, 255),) * 3 + (alpha,)))
 
 
+STAR_SIZE = 64        # a level star's picture: 9 x 9 card units, in texels a little over 7 a unit
+SHAPES = ("star", "diamond", "heart", "disc")
+
+
+def shape_polygon(name: str, s: int) -> list:
+    """The outline of a shape in a square of side `s`, as one or more (kind, points) items."""
+    c = s / 2
+    if name == "star":
+        points = []
+        for i in range(10):
+            radius = s * (0.49 if i % 2 == 0 else 0.21)
+            angle = -math.pi / 2 + i * math.pi / 5
+            points.append((c + radius * math.cos(angle), c + radius * math.sin(angle) + s * 0.03))
+        return [("poly", points)]
+    if name == "diamond":
+        return [("poly", [(c, s * 0.02), (s * 0.98, c), (c, s * 0.98), (s * 0.02, c)])]
+    if name == "heart":
+        r = s * 0.26
+        return [("circle", (s * 0.28, s * 0.32, r)), ("circle", (s * 0.72, s * 0.32, r)),
+                ("poly", [(s * 0.03, s * 0.42), (s * 0.97, s * 0.42), (c, s * 0.97)])]
+    return [("circle", (c, c, s * 0.47))]
+
+
+def star(name: str) -> bytes:
+    scale = 8
+    s = STAR_SIZE * scale
+    mask = Image.new("L", (s, s), 0)
+    draw = ImageDraw.Draw(mask)
+    for kind, data in shape_polygon(name, s):
+        if kind == "poly":
+            draw.polygon(data, fill=255)
+        else:
+            x, y, r = data
+            draw.ellipse((x - r, y - r, x + r, y + r), fill=255)
+    alpha = mask.resize((STAR_SIZE, STAR_SIZE), Image.LANCZOS)
+    return png(Image.merge("RGBA", (Image.new("L", alpha.size, 255),) * 3 + (alpha,)))
+
+
 def wrapped(name: str, data: bytes) -> str:
     text = base64.b64encode(data).decode("ascii")
     lines = [text[i:i + 100] for i in range(0, len(text), 100)]
@@ -83,8 +123,10 @@ def wrapped(name: str, data: bytes) -> str:
 
 
 def main():
-    parts = ['"""The card numbers and words of the Variants designer (made by tools/pc/make_text_presets.py)."""\n\n',
+    parts = ['"""The card numbers, words and stars of the Variants designer (made by tools/pc/make_text_presets.py)."""\n\n',
              wrapped("DIGITS", digits()), "\n", wrapped("ATK", label("ATK")), "\n", wrapped("DFD", label("DFD"))]
+    for name in SHAPES:
+        parts += ["\n", wrapped("STAR_" + name.upper(), star(name))]
     TARGET.write_text("".join(parts), encoding="utf-8", newline="\n")
     print("wrote", TARGET, TARGET.stat().st_size, "bytes")
 

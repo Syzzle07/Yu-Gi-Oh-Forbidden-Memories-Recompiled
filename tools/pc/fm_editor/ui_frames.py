@@ -15,7 +15,7 @@ import subprocess
 
 from . import art, card_icons, card_text, compat, manifest, packs, pngio, ttf, ui_assets
 from .ui_tab import (FRAME_IMAGE_DIR, GAME_H, GAME_W, ColorButton, ElementList, StageView, as_int, ensure,
-                     import_image, mod_image, section, set_member, sized)
+                     image_bytes, import_image, mod_image, section, set_member, sized)
 from .widgets import CardField, px
 from .gamedata import TYPE_NAMES
 from .model import replaced
@@ -74,7 +74,8 @@ HAND_PARTS = (
 )
 SPECS.update({item[0]: item for item in HAND_PARTS})
 DIRECT_ASSETS = {"frame", "back", "hand", "field", "field_back", "library"}
-IMAGE_PARTS = {"digits", "atk_label", "dfd_label", "magic_label", "trap_label", "ritual_label", "equip_label"}
+IMAGE_PARTS = {"digits", "atk_label", "dfd_label", "magic_label", "trap_label", "ritual_label", "equip_label",
+               "stars"}                 # (a picture of the level star: a variant's own design only, see fill_form)
 MOVABLE = {"title", "art", "stars", "attribute", "spell_icon", "atk", "def", "atk_label", "dfd_label",
            "magic_label", "trap_label", "ritual_label", "equip_label", "hand_art", "hand_atk", "hand_def",
            "hand_atk_label", "hand_dfd_label"}
@@ -83,6 +84,7 @@ MOVABLE = {"title", "art", "stars", "attribute", "spell_icon", "atk", "def", "at
 TINTABLE = {"title", "stars", "attribute", "spell_icon", "atk", "def", "atk_label", "dfd_label"}
 # What a tint needs to show: the game draws its own numbers by subtraction (they only darken, whatever the tint), so a
 # colored number or word is drawn from a white picture, the editor's own (text_presets.py), put in when one is colored.
+SHAPE_GAME, SHAPE_OWN = "The game's", "My own picture"
 TEXT_ASSETS = {"atk": "digits", "def": "digits", "atk_label": "atk_label", "dfd_label": "dfd_label"}
 NEUTRAL_TINT = 0x808080
 
@@ -451,6 +453,14 @@ class FramesPage(ttk.Frame):
         self.tint.grid(row=8, column=1, sticky="w", pady=(6, 2))
         self.restore = ttk.Button(form, text="Back to the game's", command=self.reset)
         self.restore.grid(row=9, column=1, sticky="w", pady=(10, 0))
+        # The look of the level star, in a variant's own design: the game's, or a shape (a picture the tint colors).
+        ttk.Label(form, text="Star shape").grid(row=10, column=0, sticky="w", padx=(0, 8), pady=(6, 2))
+        self.shape_label = form.grid_slaves(row=10, column=0)[0]
+        self.shape = tk.StringVar()
+        self.shapes = ttk.Combobox(form, textvariable=self.shape, state="readonly", width=16,
+                                   values=[SHAPE_GAME] + [label for _, label in text_presets.SHAPES] + [SHAPE_OWN])
+        self.shapes.grid(row=10, column=1, sticky="w", pady=(6, 2))
+        self.shapes.bind("<<ComboboxSelected>>", lambda e: self.shape_chosen())
         self.note = ttk.Label(self.side, style="Hint.TLabel", wraplength=px(self, 440), justify="left")
         self.note.grid(row=5, column=0, sticky="w", pady=(8, 0))
         if locked is not None:
@@ -820,6 +830,14 @@ class FramesPage(ttk.Frame):
                 self.paint_picture(stage, key, x, y, w, h)
             elif key == "art" and retail_art: stage.picture(key, retail_art, x, y, box=(x, y, w, h), high_quality=True)
             elif key == "art": stage.rectangle(key, x, y, w, h, fill=color, outline="#b9c7da", drag=True)
+            elif key == "stars" and self.asset("stars") and mod_image(self.project, self.asset("stars")):
+                shape = tinted(mod_image(self.project, self.asset("stars")), tint)
+                star_w, star_h = as_int(part.get("width"), 9), as_int(part.get("height"), 9)
+                star_step = as_int(part.get("step"), star_w)
+                for n in range(12):
+                    stage.picture((key, n), shape, x - n * star_step, y, drag=False,
+                                  box=(x - n * star_step, y, star_w, star_h), high_quality=True)
+                stage.boxes[key] = (x - 11 * star_step, y, 11 * star_step + star_w, star_h); stage.draggable.add(key)
             elif key == "stars" and star_icon:
                 for n in range(12):
                     stage.picture((key, n), tinted(star_icon, tint), x - n * 9, y, drag=False,
@@ -943,14 +961,17 @@ class FramesPage(ttk.Frame):
         if key in TINTABLE:
             self.tint.set(tint_value(self.part(key).get("color")))
         image = self.asset(key); self.image_name.configure(text=image or "the game's artwork")
-        editable_image = key in DIRECT_ASSETS or key in IMAGE_PARTS
+        editable_image = key in DIRECT_ASSETS or (key in IMAGE_PARTS and (key != "stars" or self.locked is not None))
+        for widget in (self.shape_label, self.shapes):
+            (widget.grid if key == "stars" and self.locked is not None else widget.grid_remove)()
+        if key == "stars": self.shape.set(self.shape_of(image))
         self.choose.state(["!disabled"] if editable_image else ["disabled"])
         self.remove.state(["!disabled"] if image and editable_image else ["disabled"])
         self.restore.state(["!disabled"])
         if self.locked is not None:
-            self.note.configure(text="This card's own design. Pictures are saved in frames/. It is drawn while the mod's "
-                                     "\"Special frames\" setting is on. The front preview is a game-scale card viewer; "
-                                     "hand, field and Library pictures belong to their own game screens.")
+            self.note.configure(text="This card's own design. Pictures are saved in frames/. The front preview is a "
+                                     "game-scale card viewer; hand, field and Library pictures belong to their own "
+                                     "game screens.")
         else:
             self.note.configure(text="Assets are saved in frames/. The first style becomes the layout's default and declares the mod's “full_bleed” setting, on by default (Mod info): untick it in the Mods window to see the game's own frame. The front preview is a game-scale card viewer; hand, field and Library assets are selectable here but belong to their own game screens.")
         self.loading = False
@@ -994,6 +1015,29 @@ class FramesPage(ttk.Frame):
         else:
             part["color"] = {"r": (value >> 16) & 255, "g": (value >> 8) & 255, "b": value & 255}
             self.text_asset(self.chosen)
+        self.done()
+
+    def shape_of(self, image):
+        """The text of the Star shape box for the star picture `image` (a file name or None)."""
+        if not image: return SHAPE_GAME
+        data = image_bytes(self.project, image)
+        for name, label in text_presets.SHAPES:
+            if data == text_presets.star(name): return label
+        return SHAPE_OWN
+
+    def shape_chosen(self):
+        """A level star's shape: the game's own, or the editor's picture of a shape (the tint colors it)."""
+        if self.loading or self.project is None or self.chosen != "stars": return
+        text = self.shape.get()
+        if text == SHAPE_OWN:
+            self.choose_image(); self.fill_form(); return
+        if text == SHAPE_GAME:
+            self.set_asset("stars", None)
+        else:
+            name = next(n for n, label in text_presets.SHAPES if label == text)
+            file = f"{FRAME_IMAGE_DIR}/{self.style_name.get()}-stars.png"
+            self.project.files[file] = text_presets.star(name)
+            self.set_asset("stars", file)
         self.done()
 
     def text_asset(self, key):
