@@ -417,53 +417,10 @@ def make_full_art(project, cid: int, aspect: float):
     entry["art"] = full_art_window(aspect)
     entry["parts_over_art"] = True          # the name, stars, element and ATK/DEF show over a picture past its window
     if not entry.get("image"):
-        # The game's own frame stays under the picture (game_frame): its name bar and stat boxes are where the
-        # parts of GAME_FRAME_PARTS are put.
+        # The game's own frame stays under the picture (game_frame): with the name, the ATK and DFD words and the numbers
+        # left out, they are the game's own, where it puts them (card_layout.c).
         entry["full_bleed"] = True
         entry["game_frame"] = True
-        for key in GAME_FRAME_PARTS:
-            if not _part_of(entry, key):
-                game_frame_part(project, name, key)
-
-
-# The parts of a card on the game's own frame that a full bleed leaves out unless they are given (the name, the ATK and
-# DFD words, the numbers' place): given as the game puts them, in the dark ink the game's are in on that gold.
-GAME_FRAME_PARTS = ("title", "atk", "def", "atk_label", "dfd_label")
-GAME_FRAME_INK = {"r": 40, "g": 30, "b": 20}
-
-
-def _part_of(entry, key):
-    if key in ("atk", "def"):
-        digits = entry.get("digits")
-        return isinstance(digits, dict) and isinstance(digits.get(key), dict)
-    return isinstance(entry.get(key), dict)
-
-
-def game_frame_part(project, name: str, key: str):
-    """The part `key` of the frame style `name` (a card that keeps the game's frame) as the game has it on that frame:
-    what "Back to the game's" does there, since leaving the part out of a full bleed draws nothing (the name, the
-    words) or puts the numbers in a corner."""
-    entry = styles(project)[name]
-    ink = dict(GAME_FRAME_INK)
-    if key == "title":
-        entry["title"] = {"x": 14, "y": 9, "color": ink}
-    elif key in ("atk", "def"):
-        digits = entry.setdefault("digits", {})
-        if not digits.get("image"):
-            file = f"{FRAME_DIR}/{name}-digits.png"
-            project.files[file] = text_presets.digits()
-            digits["image"] = file
-        for member, value in (("width", 7), ("height", 11), ("step", 7)):    # as big as the game's, in its box
-            digits.setdefault(member, value)
-        digits[key] = {"x": 110, "y": 164 if key == "atk" else 179, "color": ink}
-    elif key in ("atk_label", "dfd_label"):
-        dfd = key == "dfd_label"
-        old = entry.get(key)
-        file = old.get("image") if isinstance(old, dict) and old.get("image") else f"{FRAME_DIR}/{name}-{key}.png"
-        project.files[file] = text_presets.label(dfd)
-        entry[key] = {"image": file, "x": 72, "y": 174 if dfd else 159, "width": 22, "height": 11, "color": ink}
-    else:
-        raise ValueError(f"{key} is no part of the game's frame")
 
 
 def has_game_frame(project, name) -> bool:

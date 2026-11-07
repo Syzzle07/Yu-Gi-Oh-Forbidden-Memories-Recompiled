@@ -85,6 +85,10 @@ TINTABLE = {"title", "stars", "attribute", "spell_icon", "atk", "def", "atk_labe
 # What a tint needs to show: the game draws its own numbers by subtraction (they only darken, whatever the tint), so a
 # colored number or word is drawn from a white picture, the editor's own (text_presets.py), put in when one is colored.
 SHAPE_GAME, SHAPE_OWN = "The game's", "My own picture"
+# Where the game puts these on its own frame (a card with game_frame keeps it, and draws the name, the words and the
+# numbers itself, there, unless they are given): x, y, width, height. The numbers are a stat box's centre.
+GAME_FRAME_DEFAULTS = {"title": (12, 14, 96, 14), "atk": (109, 163, 6, 13), "def": (109, 177, 6, 13),
+                       "atk_label": (72, 157, 24, 12), "dfd_label": (72, 171, 24, 12)}
 TEXT_ASSETS = {"atk": "digits", "def": "digits", "atk_label": "atk_label", "dfd_label": "dfd_label"}
 NEUTRAL_TINT = 0x808080
 
@@ -614,8 +618,16 @@ class FramesPage(ttk.Frame):
             rows.append((iid, group, label, (), changed, ()))
         self.list.fill(rows, self.list_chosen)
 
+    def defaults(self, key):
+        """(x, y, width, height) of `key` when the style leaves it out: the game's on a card that keeps its frame."""
+        if self.locked is not None and key in GAME_FRAME_DEFAULTS:
+            from . import variants
+            if variants.has_game_frame(self.project, self.style_name.get()): return GAME_FRAME_DEFAULTS[key]
+        return SPECS[key][3]
+
     def rect(self, key):
-        _, _, _, defaults, _, resize = SPECS[key]
+        _, _, _, _, _, resize = SPECS[key]
+        defaults = self.defaults(key)
         part = self.part(key)
         if key in ("frame", "back"):
             part = self.style()
@@ -923,11 +935,12 @@ class FramesPage(ttk.Frame):
             y = max(-HAND_COORD_LIMIT, min(HAND_COORD_LIMIT, y + dy))
         else:
             x, y = x + dx, y + dy
-        # A label's omitted places are the game's (0, 0), not the editor's
-        # start places: write it always, or a move back there would be lost.
+        # A label's omitted places are the game's (0, 0), not the editor's start places: write it always,
+        # or a move back there would be lost.
+        default = self.defaults(key)
         keep = key in LABEL_KEYS
-        set_member(part, "x", x, None if keep else SPECS[key][3][0])
-        set_member(part, "y", y, None if keep else SPECS[key][3][1])
+        set_member(part, "x", x, None if keep else default[0])
+        set_member(part, "y", y, None if keep else default[1])
         self.done()
 
     def dragging(self, key, dx, dy):
@@ -937,7 +950,7 @@ class FramesPage(ttk.Frame):
     def wheel(self, key, step):
         if key not in SPECS or not SPECS[key][5] or self.fixed_caption(key): return
         part = self.size_part(key, True)
-        _, _, w, h = self.rect(key); default = SPECS[key][3]
+        _, _, w, h = self.rect(key); default = self.defaults(key)
         width_max = HAND_SIZE_LIMIT if key.startswith("hand_") else 140
         height_max = HAND_SIZE_LIMIT if key.startswith("hand_") else 196
         if key == "art" and self.locked is not None: width_max, height_max = 420, 590
@@ -998,7 +1011,7 @@ class FramesPage(ttk.Frame):
         if name in ("width", "height") and not spec[5]: return
         part = self.size_part(key, True) if name in ("width", "height") else \
             (self.style(True) if key in ("frame", "back") else self.part(key, True))
-        default = {"x": spec[3][0], "y": spec[3][1], "width": spec[3][2], "height": spec[3][3]}[name]
+        default = dict(zip(("x", "y", "width", "height"), self.defaults(key)))[name]
         if key in LABEL_KEYS and name in ("x", "y"): default = None   # the game's own is 0: write it always
         if key.startswith("hand_"):
             minimum = -HAND_COORD_LIMIT if name in ("x", "y") else 1
@@ -1065,6 +1078,9 @@ class FramesPage(ttk.Frame):
         name = f"{FRAME_IMAGE_DIR}/{self.style_name.get()}-{target}.png"
         self.project.files[name] = data
         self.set_asset(target, name)
+        if target == "digits" and self.defaults(key) is not SPECS[key][3]:
+            digits = self.part("digits", True)                     # the game's digits are 6 by 13, 6 apart
+            for member, value in zip(("width", "height", "step"), (6, 13, 6)): digits.setdefault(member, value)
         if target.endswith("label"):
             # A label's place is its own in the game (0, 0 and 16x8 left out): write the preview's.
             x, y, w, h = self.rect(target)
