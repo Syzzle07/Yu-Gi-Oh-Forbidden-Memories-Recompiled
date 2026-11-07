@@ -36,6 +36,7 @@ PRESET_PREFIX = "foil-"
 CUSTOM_PREFIX = "custom-"
 DESIGN_PREFIX = "v-"       # a variant's own design: v-<its key>
 STYLE_NAME_MAX = 31        # the game's longest frame style name
+FINISHES = ("glossy", "royal")   # a card's "finish": the foil its view shows over it (notes/more-cards.md)
 
 
 @dataclass
@@ -47,6 +48,7 @@ class Variant:
     label: str
     frame_style: str
     art: str
+    finish: str = ""
 
 
 def is_variant(project, cid: int) -> bool:
@@ -62,7 +64,8 @@ def read(project, cid: int) -> Variant:
                    permille if isinstance(permille, int) and not isinstance(permille, bool) else 0,
                    extra.get("variant_label") if isinstance(extra.get("variant_label"), str) else "",
                    extra.get("frame_style") if isinstance(extra.get("frame_style"), str) else "",
-                   extra.get("art") if isinstance(extra.get("art"), str) else "")
+                   extra.get("art") if isinstance(extra.get("art"), str) else "",
+                   extra.get("finish") if extra.get("finish") in FINISHES else "")
 
 
 def variants(project) -> list:
@@ -120,6 +123,11 @@ def check_base(base: int):
 def check_chance(permille):
     if not isinstance(permille, int) or isinstance(permille, bool) or not PERMILLE_MIN <= permille <= PERMILLE_MAX:
         raise ValueError("the chance is 0.1% to 100%")
+
+
+def check_finish(finish: str):
+    if finish and finish not in FINISHES:
+        raise ValueError("the finish is " + " or ".join(FINISHES))
 
 
 def check_label(label: str):
@@ -371,11 +379,12 @@ def frame_picture(project, cid: int):
 # --- making, changing and removing -----------------------------------------------------
 
 def add_variant(project, base: int, image=None, frame=None, permille: int = 50, label: str = "",
-                key: str = None, full_art: bool = False):
+                key: str = None, full_art: bool = False, finish: str = ""):
     """A new variant of retail card `base`: (its id, notes on its picture). `image` is a pngio.Image."""
     check_base(base)
     check_chance(permille)
     check_label(label)
+    check_finish(finish)
     if key is not None and (len(key) > KEY_MAX or not KEY_RE.match(key) or
                             any(a.key == key for a in project.added.values())):
         raise ValueError("the key is letters, digits, - and _ (80 at most), and no other card of the mod has it")
@@ -384,6 +393,8 @@ def add_variant(project, base: int, image=None, frame=None, permille: int = 50, 
     extra["variant_permille"] = permille
     if label:
         extra["variant_label"] = label
+    if finish:
+        extra["finish"] = finish
     notes = []
     try:
         set_frame(project, cid, frame)
@@ -398,6 +409,16 @@ def add_variant(project, base: int, image=None, frame=None, permille: int = 50, 
 def set_chance(project, cid: int, permille: int):
     check_chance(permille)
     project.added[cid].extra["variant_permille"] = permille
+
+
+def set_finish(project, cid: int, finish: str):
+    """The foil the card's view shows over it: "glossy", "royal", or "" for none."""
+    check_finish(finish)
+    extra = project.added[cid].extra
+    if finish:
+        extra["finish"] = finish
+    else:
+        extra.pop("finish", None)
 
 
 def set_label(project, cid: int, label: str):

@@ -20,6 +20,15 @@ from .widgets import CardField, FormDialog, WrapLabel, px, scrolled_tree
 
 PREVIEW_W = 210          # the preview card's width at 96 dpi: 1.5x the 140 units of a card
 PLAIN_W = 280            # the card in the tab while it has no design of its own: 2x
+FINISH_NAMES = ("None", "Glossy", "Royal")   # the Finish box, in the order of variants.FINISHES after "none"
+
+
+def finish_name(finish: str) -> str:
+    return finish.capitalize() if finish in variants.FINISHES else FINISH_NAMES[0]
+
+
+def finish_key(name: str) -> str:
+    return name.lower() if name.lower() in variants.FINISHES else ""
 OWN_PNG = "A PNG of my own..."
 NO_CHOICE = "(not one of these)"
 
@@ -152,8 +161,12 @@ class VariantsTab(Tab):
         ttk.Label(form, text="Frame").grid(row=3, column=0, sticky="w", pady=(4, 0))
         self.frames = FrameChooser(form, lambda: self.project, self.preview_changed, width=24)
         self.frames.box.grid(row=3, column=1, sticky="w", padx=4, pady=(4, 0))
+        ttk.Label(form, text="Finish").grid(row=4, column=0, sticky="w", pady=(4, 0))
+        self.finish = tk.StringVar(value=FINISH_NAMES[0])
+        self.finish_box = ttk.Combobox(form, textvariable=self.finish, values=FINISH_NAMES, state="readonly", width=21)
+        self.finish_box.grid(row=4, column=1, sticky="w", padx=4, pady=(4, 0))
         pictures = ttk.Frame(form)
-        pictures.grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        pictures.grid(row=5, column=0, columnspan=2, sticky="w", pady=(6, 0))
         self.picture_button = ttk.Button(pictures, text="Choose a picture...", command=self.choose_picture)
         self.picture_button.pack(side="left")
         self.whole = tk.BooleanVar(value=False)
@@ -164,9 +177,9 @@ class VariantsTab(Tab):
         self.plate_button = ttk.Button(pictures, text="Name plate...", command=self.choose_plate)
         self.plate_button.pack(side="left", padx=(4, 0))
         self.apply_button = ttk.Button(form, text="Apply", command=self.apply)
-        self.apply_button.grid(row=5, column=0, sticky="w", pady=(10, 0))
+        self.apply_button.grid(row=6, column=0, sticky="w", pady=(10, 0))
         self.status = ttk.Label(form, style="Hint.TLabel", wraplength=px(self, 300), justify="left")
-        self.status.grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.status.grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         # The rest of the tab is the card as it is, or, once it has a design of its own, the Frames designer.
         right = ttk.Frame(body)
@@ -240,6 +253,7 @@ class VariantsTab(Tab):
             self.title.configure(text="Choose a variant, or make one.")
             self.label.set("")
             self.chance.set("")
+            self.finish.set(FINISH_NAMES[0])
             self.frames.reload(None)
             self.preview.configure(image="")
             self.photo = None
@@ -248,6 +262,7 @@ class VariantsTab(Tab):
         v = variants.read(project, self.current)
         self.title.configure(text=f"{project.card_label(v.base)}   ({v.key})")
         self.label.set(v.label)
+        self.finish.set(finish_name(v.finish))
         self.chance.set(variants.percent_text(v.permille).rstrip("%"))
         self.frames.reload(variants.frame_of(project, self.current))
         self.draw()
@@ -315,6 +330,8 @@ class VariantsTab(Tab):
         try:
             if label != before.label:
                 variants.set_label(project, cid, label)
+            if finish_key(self.finish.get()) != before.finish:
+                variants.set_finish(project, cid, finish_key(self.finish.get()))
             if chance != before.permille:
                 variants.set_chance(project, cid, chance)
             if frame != variants.frame_of(project, cid):
@@ -561,9 +578,10 @@ class VariantsTab(Tab):
 
     # --- making and removing -------------------------------------------------------------
 
-    def make(self, base, image, frame, permille, label, full_art=False) -> int:
+    def make(self, base, image, frame, permille, label, full_art=False, finish="") -> int:
         """A variant, in the project and the list (the dialog's OK, and tests); its card id."""
-        cid, notes = variants.add_variant(self.project, base, image, frame, permille, label, full_art=full_art)
+        cid, notes = variants.add_variant(self.project, base, image, frame, permille, label, full_art=full_art,
+                                          finish=finish)
         self.app.changed()
         self.fill()
         self.current = cid
@@ -607,8 +625,12 @@ class VariantsTab(Tab):
             ttk.Label(body, text="Label").grid(row=4, column=0, sticky="w", pady=(4, 0))
             dialog.label = tk.StringVar()
             ttk.Entry(body, textvariable=dialog.label, width=26).grid(row=4, column=1, sticky="w", padx=4, pady=(4, 0))
+            ttk.Label(body, text="Finish").grid(row=5, column=0, sticky="w", pady=(4, 0))
+            dialog.finish = tk.StringVar(value=FINISH_NAMES[0])
+            ttk.Combobox(body, textvariable=dialog.finish, values=FINISH_NAMES, state="readonly", width=23).grid(
+                row=5, column=1, sticky="w", padx=4, pady=(4, 0))
             dialog.preview = ttk.Label(body)
-            dialog.preview.grid(row=0, column=2, rowspan=6, padx=(14, 0))
+            dialog.preview.grid(row=0, column=2, rowspan=7, padx=(14, 0))
             dialog.photo = None
             dialog.card.var.trace_add("write", lambda *_: draw(dialog))
             draw(dialog)
@@ -655,7 +677,7 @@ class VariantsTab(Tab):
                 return "The chance is 0.1% to 100%."
             try:
                 self.make(base, state["image"], dialog.frames.choice(), chance, dialog.label.get().strip(),
-                          full_art=dialog.whole.get())
+                          full_art=dialog.whole.get(), finish=finish_key(dialog.finish.get()))
             except ValueError as problem:
                 return str(problem)
             return None

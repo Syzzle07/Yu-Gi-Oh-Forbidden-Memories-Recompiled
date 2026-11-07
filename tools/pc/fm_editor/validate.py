@@ -203,6 +203,8 @@ def _check_card(project: Project, cid: int, out: list):
 
     extra = project.added[cid].extra if cid in project.added else project.card_extra.get(cid, {})
     _check_variant(project, cid, extra, add)
+    if "finish" in extra and extra["finish"] not in variants.FINISHES:
+        add("warning", "\"finish\" is \"glossy\" or \"royal\"; the game shows no foil for anything else")
     threshold = extra.get("trap_threshold")
     if threshold is not None:
         if type(threshold) is not int or not 0 <= threshold <= 65535:

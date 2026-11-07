@@ -147,6 +147,28 @@ class VariantsTest(unittest.TestCase):
         self.assertTrue(variants.suggest_key(self.project, 1).endswith("-alt-2"))
         self.assertRegex(variants.suggest_key(self.project, 1), r"^[a-z0-9-]+$")
 
+    def test_a_finish(self):
+        cid, _ = variants.add_variant(self.project, 1, None, None, 50, "Shiny", finish="royal")
+        self.assertEqual(self.project.added[cid].extra["finish"], "royal")
+        self.assertEqual(variants.read(self.project, cid).finish, "royal")
+        variants.set_finish(self.project, cid, "glossy")
+        self.assertEqual(self.project.added[cid].extra["finish"], "glossy")
+        variants.set_finish(self.project, cid, "")
+        self.assertNotIn("finish", self.project.added[cid].extra)
+        self.assertEqual(variants.read(self.project, cid).finish, "")
+        for bad in ("shiny", "Royal"):
+            with self.assertRaises(ValueError):
+                variants.set_finish(self.project, cid, bad)
+            with self.assertRaises(ValueError):
+                variants.add_variant(self.project, 1, None, None, 50, "", finish=bad)
+        self.assertEqual(len(variants.variants(self.project)), 1)    # the refused one left nothing behind
+        # What the editor writes is what the game reads, and a mistaken one is flagged.
+        variants.set_finish(self.project, cid, "royal")
+        self.assertEqual(errors(self.project), [])
+        self.project.added[cid].extra["finish"] = "sparkly"
+        self.assertTrue([i for i in validate.validate(self.project) if "finish" in i.message])
+        self.assertEqual(variants.read(self.project, cid).finish, "")    # not shown as a choice
+
     def test_changing_and_removing(self):
         cid, _ = variants.add_variant(self.project, 1, None, None, 50, "One")
         variants.set_chance(self.project, cid, 300)
@@ -598,6 +620,16 @@ class VariantsTabTest(GuiCase):
         self.assertEqual((tab.label.get(), tab.chance.get(), tab.frames.var.get()), ("Rainbow foil", "5", "Rainbow foil"))
         self.assertIsNotNone(tab.photo)
         self.assertTrue(tab.apply_button.instate(["!disabled"]))
+        # No foil at first; the Finish box sets one, and None takes it away.
+        self.assertEqual(tab.finish.get(), "None")
+        tab.finish.set("Royal")
+        self.assertTrue(tab.apply())
+        self.assertEqual(project.added[cid].extra["finish"], "royal")
+        tab.pick()
+        self.assertEqual(tab.finish.get(), "Royal")
+        tab.finish.set("None")
+        self.assertTrue(tab.apply())
+        self.assertNotIn("finish", project.added[cid].extra)
         # A new chance, label and frame.
         tab.chance.set("2.5")
         tab.label.set("Foil")

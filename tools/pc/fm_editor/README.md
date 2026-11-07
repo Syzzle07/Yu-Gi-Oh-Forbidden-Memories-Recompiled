@@ -462,7 +462,9 @@ already has, or a PNG you draw ("A PNG of my own..."): draw it for a card 140
 units wide and 197 high, with the picture's window at x 3, y 19 and 134x123, a
 strip above it from y 3 for the name, and a band under it from y 146 for the
 stars, the element and ATK and DEF. The editor writes the variant's entry
-(`copy`, `id`, `variant_permille`, `variant_label`, `art`, `frame_style`), the
+(`copy`, `id`, `variant_permille`, `variant_label`, `art`, `frame_style`, and
+`finish` when you pick one in the Finish box: Glossy or Royal, the foil the card's big
+view shows over it; the editor does not show it moving, the game does), the
 picture in `art/`, the frame style in `card_layout` with its picture in
 `frames/` (and the parts the game places on it). It writes no setting: the game
 draws a frame style of a mod that holds only styles for the cards that name it,
