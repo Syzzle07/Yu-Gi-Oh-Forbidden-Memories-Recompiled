@@ -443,6 +443,22 @@ class VariantsTabTest(GuiCase):
         self.assertNotIn("frame_style", project.added[cid].extra)
         self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("grid", ""))
 
+    def test_a_design_without_a_frame_picture(self):
+        tab, project = self.app.variants, self.app.project
+        project.source_dir = Path(self.tmp.name)          # a mod that is on disk, as one opened or saved is
+        cid = tab.make(1, picture(204, 192, (200, 30, 30, 255)), None, 50, "Plain")
+        other = tab.make(35, None, None, 50, "Other")
+        name = variants.design_name(project.added[cid].key)
+        tab.show(cid)
+        self.assertIsNotNone(tab.design())
+        self.assertNotIn("image", project.other["card_layout"]["frame_styles"][name])
+        # Away and back, and the preview of a style that is only parts: no frame picture, and no error.
+        tab.show(other)
+        tab.show(cid)
+        self.app.update()
+        self.assertIsNone(tab.frames.frame_image())
+        self.assertIsNone(variants._held(project, None))
+
     def test_a_mod_read_back_shows_its_variants(self):
         tab, project = self.app.variants, self.app.project
         cid = tab.make(35, picture(204, 192, (50, 200, 50, 255)), ("preset", "silver"), 100, "Silver")

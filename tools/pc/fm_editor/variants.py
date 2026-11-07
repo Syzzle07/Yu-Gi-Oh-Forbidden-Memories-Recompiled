@@ -145,6 +145,8 @@ def styles(project) -> dict:
 
 def _held(project, name: str):
     """A file of the mod, from what the editor holds or the mod's folder."""
+    if not isinstance(name, str) or not name:        # a style drawn from parts alone has no picture file
+        return None
     if name in project.files:
         return project.files[name]
     if project.source_dir:
