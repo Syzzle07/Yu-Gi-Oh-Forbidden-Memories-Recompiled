@@ -197,14 +197,24 @@ def plate_inks(image: Image) -> list:
 
 # --- import --------------------------------------------------------------------------
 
-def normalize(image: Image, part: str):
+def normalize(image: Image, part: str, whole: bool = False):
     """(image, notes): an imported PNG as the editor stores it. Cut to the
     part's shape from the middle (the port does that for a card's own art;
     a pack would stretch it instead), made opaque over black for a picture
     or thumbnail (in a pack, a pixel under half alpha is a hole in the
-    card), and at most 4x the game's size."""
+    card), and at most 4x the game's size. `whole` keeps all of a picture
+    (a full art card's): squeezed, whatever its shape, into the part's shape,
+    for the card's window to stretch back out to the picture's own."""
     notes = []
     w, h = SIZES[part]
+    if whole and part == "art":
+        if not image.opaque():
+            image = pngio.flatten(image)
+            notes.append("its transparent pixels are drawn over black")
+        scale = max(1, min(MAX_SCALE, round(max(image.width / w, image.height / h))))
+        notes.append(f"all of it is kept ({image.width}x{image.height}, squeezed to {w * scale}x{h * scale}: "
+                     "the card's window stretches it back)")
+        return pngio.scale_to(image, w * scale, h * scale), notes
     if abs(image.width / image.height - w / h) > 0.01 * w / h:
         left, top, cw, ch = pngio.middle(image, w, h)
         image = pngio.crop(image, round(left), round(top), round(cw), round(ch))
@@ -438,14 +448,15 @@ def _free_key_file(project, owner) -> str:
     return name
 
 
-def set_image(project, cid: int, part: str, image: Image) -> list:
-    """Use `image` as the card part (normalized first); notes on what was
-    done to it. The PNGs are written to the mod folder on save."""
+def set_image(project, cid: int, part: str, image: Image, whole: bool = False) -> list:
+    """Use `image` as the card part (normalized first, see normalize: `whole` keeps all of a picture);
+    notes on what was done to it. The PNGs are written to the mod folder on save."""
     st = state(project)
+    original = image
     kind = mechanism(project, cid, part)
     if kind == "pack" and st.problem:
         raise ValueError(f"the mod's texture pack cannot be read ({st.problem}); correct it first")
-    image, notes = normalize(image, part)
+    image, notes = normalize(image, part, whole)
     moved = {}
     if kind == "pack":
         # A retail card's own "art" or "thumbnail" is drawn over the record
@@ -486,7 +497,7 @@ def set_image(project, cid: int, part: str, image: Image) -> list:
         if thumb is None or thumb.derived:
             st.images[(cid, "thumbnail")] = Replacement(
                 "pack", thumb.file if thumb is not None else _editor_file(project, cid, "thumbnail"),
-                thumbnail_from(image, cid), pending=True, derived=True)
+                thumbnail_from(normalize(original, part)[0] if whole else image, cid), pending=True, derived=True)
             notes.append("the thumbnail is made from it (import one of its own to change that)")
     return notes
 

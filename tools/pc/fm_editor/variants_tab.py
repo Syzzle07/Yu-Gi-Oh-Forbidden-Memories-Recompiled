@@ -156,6 +156,9 @@ class VariantsTab(Tab):
         pictures.grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
         self.picture_button = ttk.Button(pictures, text="Choose a picture...", command=self.choose_picture)
         self.picture_button.pack(side="left")
+        self.whole = tk.BooleanVar(value=False)
+        self.whole_check = ttk.Checkbutton(pictures, text="Full art", variable=self.whole)
+        self.whole_check.pack(side="left", padx=(6, 0))
         self.plate_button = ttk.Button(pictures, text="Name plate...", command=self.choose_plate)
         self.plate_button.pack(side="left", padx=(4, 0))
         self.apply_button = ttk.Button(form, text="Apply", command=self.apply)
@@ -228,7 +231,7 @@ class VariantsTab(Tab):
         self.current = cid if cid is not None and project is not None and variants.is_variant(project, cid) else None
         on = self.current is not None
         for widget in (self.remove_button, self.picture_button, self.plate_button, self.design_button,
-                       self.apply_button):
+                       self.apply_button, self.whole_check):
             widget.state(["!disabled"] if on else ["disabled"])
         self.status.configure(text="")
         if not on:
@@ -338,15 +341,21 @@ class VariantsTab(Tab):
         if path:
             self.use_picture(path)
 
-    def use_picture(self, path) -> bool:
-        """`path` as the chosen variant's picture (the button, and tests)."""
+    def use_picture(self, path, whole=None) -> bool:
+        """`path` as the chosen variant's picture (the button, and tests). `whole` (else the Full art box)
+        keeps all of the picture and covers the card with it."""
+        whole = self.whole.get() if whole is None else whole
         try:
-            notes = variants.set_art(self.project, self.current, pngio.read(path))
+            notes = variants.set_art(self.project, self.current, pngio.read(path), whole)
         except (OSError, pngio.PngError, ValueError) as problem:
             messagebox.showerror("FM Editor", f"Could not use {path}: {problem}", parent=self)
             return False
         self.app.changed()
+        self.fill()
+        self.tree.selection_set(str(self.current))
+        self.frames.reload(variants.frame_of(self.project, self.current))
         self.draw()
+        self.show_right(force=True)
         self.status.configure(text=f"{Path(path).name} is the picture" + (": " + "; ".join(notes) if notes else "."))
         return True
 
@@ -406,9 +415,9 @@ class VariantsTab(Tab):
 
     # --- making and removing -------------------------------------------------------------
 
-    def make(self, base, image, frame, permille, label) -> int:
+    def make(self, base, image, frame, permille, label, full_art=False) -> int:
         """A variant, in the project and the list (the dialog's OK, and tests); its card id."""
-        cid, notes = variants.add_variant(self.project, base, image, frame, permille, label)
+        cid, notes = variants.add_variant(self.project, base, image, frame, permille, label, full_art=full_art)
         self.app.changed()
         self.fill()
         self.current = cid
@@ -439,6 +448,9 @@ class VariantsTab(Tab):
             line.grid(row=1, column=1, sticky="w", padx=4, pady=(4, 0))
             dialog.picture = ttk.Label(line, text="the card's own")
             ttk.Button(line, text="Choose a picture...", command=lambda: choose(dialog)).pack(side="left")
+            dialog.whole = tk.BooleanVar(value=False)
+            ttk.Checkbutton(line, text="Full art", variable=dialog.whole, command=lambda: draw(dialog)).pack(
+                side="left", padx=(6, 0))
             dialog.picture.pack(side="left", padx=6)
             ttk.Label(body, text="Frame").grid(row=2, column=0, sticky="w", pady=(4, 0))
             dialog.frames = FrameChooser(body, lambda: self.project, lambda: draw(dialog))
@@ -478,6 +490,8 @@ class VariantsTab(Tab):
                 except (OSError, ValueError, KeyError):
                     image = None
             window = variants.window_of_choice(self.project, dialog.frames.choice())
+            if dialog.whole.get() and state["image"] is not None:       # all of the picture, over the card
+                window = variants.full_art_window(image.width / image.height)
             card = variants.card_picture(image, dialog.frames.frame_image(), px(self, PREVIEW_W), window)
             dialog.photo = photo(dialog, card)
             dialog.preview.configure(image=dialog.photo)
@@ -490,7 +504,8 @@ class VariantsTab(Tab):
             if chance is None:
                 return "The chance is 0.1% to 100%."
             try:
-                self.make(base, state["image"], dialog.frames.choice(), chance, dialog.label.get().strip())
+                self.make(base, state["image"], dialog.frames.choice(), chance, dialog.label.get().strip(),
+                          full_art=dialog.whole.get())
             except ValueError as problem:
                 return str(problem)
             return None

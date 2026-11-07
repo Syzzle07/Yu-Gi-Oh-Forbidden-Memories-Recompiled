@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import art, frame_presets, pngio
+from . import art, frame_presets, pngio, text_presets
 from .gamedata import CARD_COUNT
 from .model import KEY_RE, replaced
 
@@ -328,7 +328,7 @@ def frame_picture(project, cid: int):
 # --- making, changing and removing -----------------------------------------------------
 
 def add_variant(project, base: int, image=None, frame=None, permille: int = 50, label: str = "",
-                key: str = None):
+                key: str = None, full_art: bool = False):
     """A new variant of retail card `base`: (its id, notes on its picture). `image` is a pngio.Image."""
     check_base(base)
     check_chance(permille)
@@ -343,9 +343,9 @@ def add_variant(project, base: int, image=None, frame=None, permille: int = 50, 
         extra["variant_label"] = label
     notes = []
     try:
-        if image is not None:
-            notes = art.set_image(project, cid, "art", image)
         set_frame(project, cid, frame)
+        if image is not None:
+            notes = set_art(project, cid, image, full_art)
     except ValueError:
         project.remove_card(cid)
         raise
@@ -366,8 +366,47 @@ def set_label(project, cid: int, label: str):
         extra.pop("variant_label", None)
 
 
-def set_art(project, cid: int, image) -> list:
-    return art.set_image(project, cid, "art", image)
+def full_art_window(aspect: float) -> dict:
+    """The picture's window for a full art card: the picture (of width / height `aspect`) laid over the
+    whole card as far as it covers it, centred, what is past the card's edge cut off by the game."""
+    card_w, card_h = frame_presets.CARD_W, frame_presets.CARD_H
+    if aspect >= card_w / card_h:
+        height, width = card_h, round(card_h * aspect)
+    else:
+        width, height = card_w, round(card_w / aspect)
+    return {"x": (card_w - width) // 2, "y": (card_h - height) // 2, "width": width, "height": height}
+
+
+def make_full_art(project, cid: int, aspect: float):
+    """The variant's card, a full art one: its own design, the picture's window over the whole card. A card
+    with no frame picture of its own gets the parts it needs over a picture (the name, and white numbers: the
+    game's own numbers cannot be seen on a dark picture); one with a frame keeps its frame, under the picture."""
+    name = own_design(project, cid)
+    entry = styles(project)[name]
+    entry["art"] = full_art_window(aspect)
+    if not entry.get("image"):
+        entry["full_bleed"] = True
+        entry.setdefault("title", {"x": 14, "y": 9})
+        if not isinstance(entry.get("digits"), dict) or not entry["digits"].get("image"):
+            file = f"{FRAME_DIR}/{name}-digits.png"
+            project.files[file] = text_presets.digits()
+            digits = entry.setdefault("digits", {})
+            digits["image"] = file
+            digits.setdefault("atk", {"x": 112, "y": 181})
+            digits.setdefault("def", {"x": 112, "y": 191})
+
+
+def set_art(project, cid: int, image, whole: bool = False) -> list:
+    """The variant's picture. `whole` keeps all of it, as a full art card's: the card gets its own design with
+    the picture laid over the whole card (make_full_art)."""
+    notes = art.set_image(project, cid, "art", image, whole)
+    if whole:
+        # The small picture (the hand's, the field's) is the middle of the picture as it is: the game would make it
+        # from the squeezed one, and stretch it.
+        art.set_image(project, cid, "thumbnail", image)
+        make_full_art(project, cid, image.width / image.height)
+        notes.append("the card has a design of its own now: its picture covers the card")
+    return notes
 
 
 def remove_variant(project, cid: int):
@@ -416,11 +455,16 @@ def card_picture(art_image, frame_image, width: int = 140, window: dict = None) 
     height = round(frame_presets.FRAME_H * scale)
     canvas = pngio.Image(width, height, bytes((0x20, 0x20, 0x28, 255)) * (width * height))
     window = window or frame_presets.WINDOW     # the frame's units: the picture's x, y, width and height
-    if art_image is not None:
-        w, h = round(window["width"] * scale), round(window["height"] * scale)
-        left, top, cw, ch = pngio.middle(art_image, w, h)
-        picture = pngio.resample(art_image, w, h, (left, top, cw, ch))
-        canvas = over(canvas, picture, round(window["x"] * scale), round(window["y"] * scale))
+    # As the game draws it: the frame behind, the picture stretched over its window (a window past the
+    # card's edge is cut at the edge: a full art card's), and the rest of the card over both.
     if frame_image is not None:
         canvas = over(canvas, pngio.scale_to(frame_image, width, height))
+    if art_image is not None:
+        left, top = window["x"] * scale, window["y"] * scale
+        w, h = window["width"] * scale, window["height"] * scale
+        x0, y0, x1, y1 = max(0, round(left)), max(0, round(top)), min(width, round(left + w)), min(height, round(top + h))
+        if x1 > x0 and y1 > y0 and w > 0 and h > 0:
+            sx, sy = art_image.width / w, art_image.height / h
+            box = ((x0 - left) * sx, (y0 - top) * sy, (x1 - x0) * sx, (y1 - y0) * sy)
+            canvas = over(canvas, pngio.resample(art_image, x1 - x0, y1 - y0, box), x0, y0)
     return canvas

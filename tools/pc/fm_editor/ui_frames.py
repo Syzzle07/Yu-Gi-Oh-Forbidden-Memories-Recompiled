@@ -928,6 +928,7 @@ class FramesPage(ttk.Frame):
         _, _, w, h = self.rect(key); default = SPECS[key][3]
         width_max = HAND_SIZE_LIMIT if key.startswith("hand_") else 140
         height_max = HAND_SIZE_LIMIT if key.startswith("hand_") else 196
+        if key == "art" and self.locked is not None: width_max, height_max = 420, 590
         set_member(part, "width", max(1, min(width_max, w + step * 4)), default[2])
         set_member(part, "height", max(1, min(height_max, h + step * 4)), default[3]); self.done()
 
@@ -993,6 +994,8 @@ class FramesPage(ttk.Frame):
         else:
             minimum = -320
             limit = 140 if name == "width" else 196 if name == "height" else 320
+            if key == "art" and self.locked is not None:      # a full art card's picture runs past the card
+                limit = 420 if name == "width" else 590 if name == "height" else 320
         set_member(part, name, max(minimum, min(limit, value)), default); self.done()
 
     def choose_image(self):

@@ -25,6 +25,7 @@ PRESETS = {
 CUSTOM_HAND_COLOR = "purple"
 
 FRAME_W, FRAME_H = 140, 197
+CARD_W, CARD_H = 140, 196      # the box the game cuts a picture at
 # The window the card's picture fills, in the frame's units.
 WINDOW = {"x": 3, "y": 19, "width": 134, "height": 123}
 

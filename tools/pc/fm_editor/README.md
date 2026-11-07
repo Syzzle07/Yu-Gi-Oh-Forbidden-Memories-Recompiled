@@ -455,7 +455,7 @@ mod's variants by their card; beside it the chosen one is drawn the way the game
 lays it out, the picture in its frame's window.
 
 **New variant...** asks for the card, the picture (a PNG or JPEG; its middle is cut to
-the card's shape, as in the Art tab), the frame, the chance (0.1% to 100%) and a
+the card's shape, as in the Art tab, unless **Full art** is ticked: see below), the frame, the chance (0.1% to 100%) and a
 label (24 letters, shown under the card in the Library). The **frame** is the
 game's own, one of the presets (rainbow, gold and silver foil), a style the mod
 already has, or a PNG you draw ("A PNG of my own..."): draw it for a card 140
@@ -469,6 +469,17 @@ draws a frame style of a mod that holds only styles for the cards that name it,
 with nothing to switch on. It writes no `name`: the variant keeps its card's own name plate, in the
 game's lettering and in the language the player plays in. The mod needs mod API
 25, which the editor writes as `min_api`.
+
+**Full art** (beside **Choose a picture...**, and in **New variant...**) keeps all of a
+picture whatever its shape, as a full art card does: the card gets a design of its own with
+the picture laid over the whole card, as far as it covers it, centred (what is past the card's
+edge is cut off by the game). The picture is squeezed into the art's shape in the file and
+stretched back by the card's window, so the window's shape is the picture's. A card
+with no frame picture also gets its name, and white numbers (the game's own cannot be seen on a
+dark picture); one with a frame keeps it, behind the picture. In the designer the picture's
+window can then be moved and sized past the card (up to 420 x 590 units), and the preview
+cuts it at the card as the game does. The small picture of the hand and the field is the middle
+of the picture as it is.
 
 **Design the card** is for a card that is more than a recolored frame. It shows
 the UI tab's Frames designer in the tab itself, beside the list, on a frame style that is this variant's alone (a

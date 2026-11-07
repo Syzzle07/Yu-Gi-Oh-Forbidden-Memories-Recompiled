@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from fm_editor import compat, frame_presets, manifest, pngio, text_presets, ui_frames, validate, variants
+from fm_editor import art, compat, frame_presets, manifest, pngio, text_presets, ui_frames, validate, variants
 from fm_editor.model import Project, replaced
 from fm_editor.pngio import Image
 from fm_editor.tests.test_data import fixture
@@ -246,6 +246,63 @@ class VariantsTest(unittest.TestCase):
             with self.assertRaises(pngio.PngError) as caught:
                 pngio.read(path)
         self.assertIn("Pillow", str(caught.exception))
+
+    def test_a_full_art_card(self):
+        # A tall picture, kept whole: squeezed into the art's shape, the card's window stretches it back.
+        tall = picture(200, 300, (30, 120, 200, 255))
+        cid, notes = variants.add_variant(self.project, 35, tall, None, 50, "Full art", key="dm-full", full_art=True)
+        stored = art.state(self.project).images[(cid, "art")].image
+        self.assertEqual(stored.width * 96, stored.height * 102)                    # the art's shape: not cut
+        self.assertTrue(any("all of it is kept" in n for n in notes))
+        window = variants.full_art_window(200 / 300)
+        self.assertEqual(window, {"x": 0, "y": -7, "width": 140, "height": 210})   # covers the card, centred
+        self.assertEqual(variants.full_art_window(2.0), {"x": -126, "y": 0, "width": 392, "height": 196})
+        self.assertEqual(variants.full_art_window(140 / 196), {"x": 0, "y": 0, "width": 140, "height": 196})
+        name = variants.design_name("dm-full")
+        entry = variants.styles(self.project)[name]
+        self.assertEqual(entry["art"], window)
+        # No frame picture: the parts a card over a picture needs, and white numbers (the game's own cannot be
+        # seen on a dark picture).
+        self.assertIs(entry["full_bleed"], True)
+        self.assertIn("title", entry)
+        self.assertEqual(entry["digits"]["image"], f"frames/{name}-digits.png")
+        self.assertIn(entry["digits"]["image"], self.project.files)
+        self.assertEqual(self.project.added[cid].extra["frame_style"], name)
+        # The thumbnail comes from the middle of the picture as it is, not the squeezed one.
+        thumb = art.state(self.project).images[(cid, "thumbnail")].image
+        self.assertEqual(thumb.width * 32, thumb.height * 40)
+        self.assertEqual(errors(self.project), [])
+        # A picture that is not kept whole is cut, as ever, and takes no design.
+        other, _ = variants.add_variant(self.project, 1, tall, None, 50, "Cut", key="bewd-cut")
+        cut = art.state(self.project).images[(other, "art")].image
+        self.assertEqual(cut.width, 200)                                                  # the middle, cut to the art's shape
+        self.assertTrue(abs(cut.width / cut.height - 102 / 96) < 0.02 and cut.height < 200)
+        self.assertNotIn("frame_style", self.project.added[other].extra)
+        # With a frame, the frame stays (under the picture): only the window changes.
+        framed, _ = variants.add_variant(self.project, 1, tall, ("preset", "gold"), 50, "Framed", key="bewd-framed",
+                                         full_art=True)
+        style = variants.styles(self.project)[variants.design_name("bewd-framed")]
+        self.assertTrue(style["image"].startswith("frames/foil-gold"))
+        self.assertNotIn("full_bleed", style)
+        self.assertEqual(style["art"], window)
+        self.assertEqual(variants.styles(self.project)["foil-gold"]["art"]["width"], 134)   # the preset is as it was
+
+    def test_the_card_picture_is_cut_at_the_card(self):
+        red = picture(40, 30, (200, 20, 20, 255))
+        blue = picture(30, 30, (20, 20, 200, 255))
+        frame = picture(140, 197, (20, 200, 20, 255))
+        # The picture past every edge of the card covers it, over a frame behind it.
+        card = variants.card_picture(red, frame, 140, {"x": -20, "y": -30, "width": 180, "height": 260})
+        self.assertEqual((card.width, card.height), (140, 197))
+        for x, y in ((0, 0), (139, 0), (0, 196), (139, 196), (70, 100)):
+            self.assertEqual(tuple(card.rgba[(y * 140 + x) * 4:(y * 140 + x) * 4 + 3]), (200, 20, 20))
+        # A window inside the card leaves the frame around it.
+        card = variants.card_picture(red, frame, 140, {"x": 10, "y": 10, "width": 50, "height": 50})
+        self.assertEqual(tuple(card.rgba[(5 * 140 + 5) * 4:(5 * 140 + 5) * 4 + 3]), (20, 200, 20))
+        self.assertEqual(tuple(card.rgba[(30 * 140 + 30) * 4:(30 * 140 + 30) * 4 + 3]), (200, 20, 20))
+        # A window wholly outside draws nothing, and nothing fails.
+        card = variants.card_picture(blue, None, 140, {"x": 500, "y": 0, "width": 30, "height": 30})
+        self.assertEqual(tuple(card.rgba[0:3]), (0x20, 0x20, 0x28))
 
     def test_checks(self):
         project = self.project
@@ -592,6 +649,34 @@ class VariantsTabTest(GuiCase):
         # Other parts have no shape to choose.
         page.select("art")
         self.assertEqual(page.shapes.winfo_manager(), "")
+        self.assertEqual(errors(project), [])
+
+    def test_full_art_in_the_tab(self):
+        tab, project = self.app.variants, self.app.project
+        cid = tab.make(35, None, None, 50, "Mine")
+        tab.show(cid)
+        self.assertEqual(project.info.settings, [])
+        path = Path(self.tmp.name) / "tall.png"
+        pngio.write(path, picture(200, 300, (30, 120, 200, 255)))
+        self.assertFalse(tab.whole.get())
+        self.assertTrue(tab.use_picture(path, whole=True))
+        name = variants.design_name(project.added[cid].key)
+        # The tab shows the designer, on a card whose picture covers it.
+        self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("", "grid"))
+        self.assertEqual(variants.styles(project)[name]["art"], variants.full_art_window(200 / 300))
+        page = tab.designer
+        # The picture's window may be made bigger than the card in the designer: the game cuts it at the edge.
+        page.select("art")
+        for field, value in (("x", "-20"), ("y", "-40"), ("width", "400"), ("height", "580")):
+            page.vars[field].set(value)
+            page.typed(field)
+        self.assertEqual(variants.styles(project)[name]["art"], {"x": -20, "y": -40, "width": 400, "height": 580})
+        page.vars["width"].set("900")
+        page.typed("width")
+        self.assertEqual(variants.styles(project)["" + name]["art"]["width"], 420)         # bounded
+        # The tab's box, and the New variant way.
+        other = tab.make(1, picture(200, 300, (200, 30, 30, 255)), None, 50, "Full", full_art=True)
+        self.assertTrue(variants.has_own_design(project, other))
         self.assertEqual(errors(project), [])
 
     def test_a_variants_design_is_not_listed_in_the_ui_tab(self):
