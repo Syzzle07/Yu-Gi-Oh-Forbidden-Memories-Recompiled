@@ -660,6 +660,14 @@ class FramesPage(ttk.Frame):
             return self.part("digits", create)
         return self.style(create) if key in ("frame", "back") else self.part(key, create)
 
+    def game_frame(self):
+        """The game's own frame, behind a variant's design that has no frame picture of its own (the game draws
+        it for a style with no image and no full_bleed); None otherwise, and in the UI tab."""
+        wa = getattr(getattr(self.tab.app, "files", None), "wa", None)
+        if self.locked is None or wa is None or self.style().get("full_bleed") is True: return None
+        index = {"monster": 0, "magic": 1, "equip": 1, "ritual": 3, "trap": 2}.get(self.preview_kind.get(), 0)
+        return card_icons.card_frame(wa, index)
+
     def paint_picture(self, stage, key, x, y, w, h):
         image = mod_image(self.project, self.asset(key))
         if image and key in TINTABLE: image = tinted(image, tint_value(self.part(key).get("color")))
@@ -757,7 +765,9 @@ class FramesPage(ttk.Frame):
         stage = self.stage; stage.clear(); stage.rectangle(None, 0, 0, CARD_W, CARD_H, fill="#06080d")
         frame = "frame" if self.face.get() else "back"
         fx, fy, fw, fh = self.rect(frame)
-        self.paint_picture(stage, frame, fx, fy, fw, fh)
+        game_frame = self.game_frame() if frame == "frame" and not self.asset("frame") else None
+        if game_frame: stage.picture("frame", game_frame, fx, fy, box=(fx, fy, fw, fh), high_quality=True)
+        else: self.paint_picture(stage, frame, fx, fy, fw, fh)
         if not self.face.get(): stage.outline(self.chosen); return
         preview_kind = self.preview_kind.get()
         monster = preview_kind == "monster"

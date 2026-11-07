@@ -470,6 +470,12 @@ with nothing to switch on. It writes no `name`: the variant keeps its card's own
 game's lettering and in the language the player plays in. The mod needs mod API
 25, which the editor writes as `min_api`.
 
+A card with **The game's frame** (or a design with no frame picture of its own and no full bleed) is
+shown on the game's own frame, read from the disc (the card's own colour: monster, magic, trap, ritual,
+purple or orange; in the designer it follows the Monster / Magic / ... switch), with the picture in
+the place the game puts it (x 19, y 50, 102 x 96), so the name, stars, element and ATK and DEF can be
+placed on it.
+
 **Full art** (beside **Choose a picture...**, and in **New variant...**) keeps all of a
 picture whatever its shape, as a full art card does: the card gets a design of its own with
 the picture laid over the whole card, as far as it covers it, centred (what is past the card's

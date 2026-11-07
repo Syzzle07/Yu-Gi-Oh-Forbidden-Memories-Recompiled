@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from fm_editor import art, compat, frame_presets, manifest, pngio, text_presets, ui_frames, validate, variants
+from fm_editor import art, card_icons, compat, frame_presets, manifest, pngio, text_presets, ui_frames, validate, variants
 from fm_editor.model import Project, replaced
 from fm_editor.pngio import Image
 from fm_editor.tests.test_data import fixture
@@ -246,6 +246,43 @@ class VariantsTest(unittest.TestCase):
             with self.assertRaises(pngio.PngError) as caught:
                 pngio.read(path)
         self.assertIn("Pillow", str(caught.exception))
+
+    def test_the_games_own_frame(self):
+        # The frame sheet: a pixel of index 1 at the top left of column 0, one at the right edge of the card (column 1),
+        # and the palette of the monster frame (row 8) giving index 1 a color.
+        base, palettes = card_icons.CARD_SHEET - 3 * 0x8000, card_icons.CARD_PALETTES
+        wa = bytearray(palettes + 14 * 0x200)
+        wa[base] = 1
+        wa[base + 0x8000 + 11] = 1                                    # card x 128 + 11 = 139, row 0
+        wa[base + 191 * 128] = 1                                      # the body's last row
+        wa[base + 192 * 128] = 1                                      # past the card's body: not in it
+        word = 31 | 8 << 5 | 16 << 10                                 # 5 bits a channel
+        wa[palettes + 8 * 0x200 + 2], wa[palettes + 8 * 0x200 + 3] = word & 255, word >> 8
+        frame = card_icons.card_frame(bytes(wa), 0)
+        self.assertEqual((frame.width, frame.height), (140, 197))
+        pixel = lambda x, y: tuple(frame.rgba[(y * 140 + x) * 4:(y * 140 + x) * 4 + 4])
+        self.assertEqual(pixel(0, 0), (255, 66, 132, 255))
+        self.assertEqual(pixel(139, 0)[3], 255)
+        self.assertEqual(pixel(0, 191)[3], 255)
+        self.assertEqual(pixel(0, 192)[3], 0)                         # the card is 192 rows of the 197
+        self.assertEqual(pixel(5, 5)[3], 0)                           # index 0 is clear
+        self.assertIsNone(card_icons.card_frame(b"short", 0))
+        self.assertIsNone(card_icons.card_frame(bytes(wa), 6))
+        # With no picture of its own the game's frame is drawn, and its picture goes where the game puts it.
+        project = self.project
+        self.assertFalse(variants.has_frame_picture(project, None))
+        self.assertTrue(variants.has_frame_picture(project, ("preset", "gold")))
+        self.assertEqual(variants.window_of_choice(project, None), variants.RETAIL_WINDOW)
+        self.assertEqual(variants.window_of_choice(project, ("preset", "gold")), frame_presets.WINDOW)
+        styles = variants._object(project, "card_layout", "frame_styles")
+        styles["bare"] = {"hand_color": "gold", "art": {"x": 1, "y": 2, "width": 3, "height": 4}}
+        styles["full"] = {"hand_color": "gold", "full_bleed": True, "art": {"x": 1, "y": 2, "width": 30, "height": 40}}
+        styles["framed"] = {"hand_color": "gold", "image": "frames/x.png", "art": {"x": 5, "y": 6, "width": 7, "height": 8}}
+        self.assertFalse(variants.has_frame_picture(project, ("style", "bare")))
+        self.assertEqual(variants.window_of_choice(project, ("style", "bare")), variants.RETAIL_WINDOW)   # its art part is ignored
+        self.assertTrue(variants.has_frame_picture(project, ("style", "full")))
+        self.assertEqual(variants.window_of_choice(project, ("style", "full"))["width"], 30)
+        self.assertEqual(variants.window_of_choice(project, ("style", "framed"))["width"], 7)
 
     def test_a_full_art_card(self):
         # A tall picture, kept whole: squeezed into the art's shape, the card's window stretches it back.

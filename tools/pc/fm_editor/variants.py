@@ -294,10 +294,24 @@ def window_of_style(project, name) -> dict:
     return window
 
 
+RETAIL_WINDOW = {"x": 19, "y": 50, "width": 102, "height": 96}      # where the game puts a card's picture
+
+
+def has_frame_picture(project, choice) -> bool:
+    """Whether the frame `choice` is a picture of its own (a preset, a PNG, a style with an image), as against the
+    game's: the game's frame is drawn for a style with no image of its own and no full_bleed."""
+    if choice is None:
+        return False
+    if choice[0] != "style":
+        return True
+    entry = styles(project).get(choice[1])
+    return isinstance(entry, dict) and (bool(entry.get("image")) or entry.get("full_bleed") is True)
+
+
 def window_of_choice(project, choice) -> dict:
     if choice is not None and choice[0] == "style":
-        return window_of_style(project, choice[1])
-    return dict(frame_presets.WINDOW)
+        return window_of_style(project, choice[1]) if has_frame_picture(project, choice) else dict(RETAIL_WINDOW)
+    return dict(frame_presets.WINDOW) if choice is not None else dict(RETAIL_WINDOW)
 
 
 def frame_of(project, cid: int):

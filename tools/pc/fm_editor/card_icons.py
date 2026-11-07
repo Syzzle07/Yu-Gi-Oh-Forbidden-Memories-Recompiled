@@ -32,6 +32,40 @@ def _picture(wa: bytes, base: int, u: int, v: int, width: int, height: int, pale
     return pngio.Image(width, height, bytes(rgba)) if any(rgba[3::4]) else None
 
 
+FRAME_COLUMNS, FRAME_COLUMN = CARD_SHEET - 3 * 0x8000, 0x8000    # the frame sheet's two 128-texel columns
+FRAME_EDGE_ROWS = 124                                             # the rows of column 1 that are the card's edge
+FRAME_SIZE, FRAME_CARD_ROWS = (140, 197), 192                     # a card: 140 wide, its body 192 rows of the 197
+
+
+def card_frame(wa: bytes, frame: int = 0):
+    """The game's own frame of a card as it draws it, 140 x 197 (the rest of the card's size below its body is
+    clear): `frame` is a gamedata.FRAME_NAMES index (monster, magic, trap, ritual, purple, orange). The picture's
+    window is black in it. Cut from the frame sheet of WA_MRG.MRG, where the card is the top left of two columns
+    of 128 texels, in its own palette row (8 + frame)."""
+    palette = CARD_PALETTES + (8 + frame) * 0x200
+    width, height = FRAME_SIZE
+    if not 0 <= frame < 6 or len(wa) < max(FRAME_COLUMNS + 2 * FRAME_COLUMN, palette + 0x200):
+        return None
+    rgba = bytearray(width * height * 4)
+    for y in range(FRAME_CARD_ROWS):
+        for x in range(width):
+            column, tu = divmod(x, 128)
+            row = y
+            if column and y >= FRAME_EDGE_ROWS:
+                # The second column holds the card's right edge for the top rows only (the card back is below):
+                # lower down the same border is taken from rows above, the bottom shadow from the column beside.
+                row = y - 64 if y < FRAME_CARD_ROWS - 8 else None
+            if row is None:
+                column, tu, row = 0, 127, y
+            index = wa[FRAME_COLUMNS + column * FRAME_COLUMN + row * 128 + tu]
+            word = wa[palette + 2 * index] | wa[palette + 2 * index + 1] << 8
+            if index and word:
+                at = (y * width + x) * 4
+                rgba[at:at + 4] = bytes(((word & 31) << 3 | (word & 31) >> 2, (word >> 5 & 31) << 3 | (word >> 5 & 31) >> 2,
+                                         (word >> 10 & 31) << 3 | (word >> 10 & 31) >> 2, 255))
+    return pngio.Image(width, height, bytes(rgba))
+
+
 def attribute(wa: bytes, n: int):
     """Attribute n's ball (0 Light ... 5 Wind, 6 Magic, 7 Trap), 16 x 16."""
     return _picture(wa, CARD_SHEET, 16 * n, 128, 16, 16, CARD_PALETTES + BALL_PALETTE + 0x20 * n) \

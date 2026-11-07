@@ -13,7 +13,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from . import art, file_dialogs, frame_presets, pngio, ui_frames, variants
+from . import art, card_icons, file_dialogs, frame_presets, pngio, ui_frames, variants
 from .tabs import Tab
 from .variants_design import DesignHost
 from .widgets import CardField, FormDialog, WrapLabel, px, scrolled_tree
@@ -286,9 +286,12 @@ class VariantsTab(Tab):
     def draw(self):
         if self.current is None or self.project is None:
             return
-        window = variants.window_of_choice(self.project, self.frames.choice())
-        card = variants.card_picture(self.picture_of(self.current), self.frames.frame_image(), px(self, PLAIN_W),
-                                     window)
+        choice = self.frames.choice()
+        frame = self.frames.frame_image()
+        window = variants.window_of_choice(self.project, choice)
+        if frame is None and not variants.has_frame_picture(self.project, choice) and self.wa is not None:
+            frame = card_icons.card_frame(self.wa, self.project.cards[self.project.base_of(self.current)].shown_frame())
+        card = variants.card_picture(self.picture_of(self.current), frame, px(self, PLAIN_W), window)
         self.photo = photo(self, card)
         self.preview.configure(image=self.photo)
 
@@ -489,10 +492,14 @@ class VariantsTab(Tab):
                     image = art.disc_image(self.wa, base, "art")
                 except (OSError, ValueError, KeyError):
                     image = None
-            window = variants.window_of_choice(self.project, dialog.frames.choice())
+            choice = dialog.frames.choice()
+            window = variants.window_of_choice(self.project, choice)
+            frame = dialog.frames.frame_image()
+            if frame is None and not variants.has_frame_picture(self.project, choice) and self.wa is not None and base:
+                frame = card_icons.card_frame(self.wa, self.project.cards[base].shown_frame())
             if dialog.whole.get() and state["image"] is not None:       # all of the picture, over the card
                 window = variants.full_art_window(image.width / image.height)
-            card = variants.card_picture(image, dialog.frames.frame_image(), px(self, PREVIEW_W), window)
+            card = variants.card_picture(image, frame, px(self, PREVIEW_W), window)
             dialog.photo = photo(dialog, card)
             dialog.preview.configure(image=dialog.photo)
 
