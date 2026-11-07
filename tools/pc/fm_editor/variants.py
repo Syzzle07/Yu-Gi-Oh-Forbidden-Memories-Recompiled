@@ -5,8 +5,9 @@ thousandths, of being won in the card's place), its own picture and, when it
 has one, a frame of its own: a "frame_style" naming an entry of the mod's
 card_layout "frame_styles". This module is the engine of the Variants tab,
 with no Tk: it makes, changes and removes them in a Project, writing what the
-game reads (the card's entry, its picture, the frame style and its picture, the
-mod's "Special frames" switch) so the modder never has to.
+game reads (the card's entry, its picture, the frame style and its picture) so the
+modder never has to. A mod of frame styles alone needs no switch: the game draws such
+a style for the cards that name it.
 
 A frame is chosen as one of:
     None                      no frame of its own: the game's
@@ -29,7 +30,6 @@ EXODIA = (17, 18, 19, 20, 21)
 PERMILLE_MIN, PERMILLE_MAX = 1, 1000
 LABEL_MAX = 24
 KEY_MAX = 80
-SWITCH = "full_bleed"      # the setting that turns a layout mod's frames on (card_layout.c)
 FRAME_DIR = "frames"
 PRESET_PREFIX = "foil-"
 CUSTOM_PREFIX = "custom-"
@@ -178,17 +178,6 @@ def _free_file(project, stem: str, data: bytes) -> str:
     return name
 
 
-def ensure_switch(project):
-    """The mod's "Special frames" setting, on from the start: a layout mod's frames are drawn while it is on."""
-    for spec in project.info.settings:
-        if isinstance(spec, dict) and spec.get("key") == SWITCH:
-            return
-    project.info.settings.append({
-        "key": SWITCH, "label": "VARIANTS  |  Special frames", "type": "bool", "default": 1,
-        "description": "Draws a variant that has a frame of its own in that frame. Other cards keep the "
-                       "frames of the game or of your other frame pack."})
-
-
 def frame_choices(project) -> list:
     """(text, choice) for each frame the tab offers: none, the presets, the mod's own styles."""
     out = [("The game's frame", None)]
@@ -250,7 +239,6 @@ def set_frame(project, cid: int, choice):
     else:
         raise ValueError(f"unknown frame choice {kind!r}")
     extra["frame_style"] = name
-    ensure_switch(project)
 
 
 # --- a variant's own design ------------------------------------------------------------
@@ -278,7 +266,6 @@ def own_design(project, cid: int) -> str:
         source = entries.get(current) if isinstance(current, str) else None
         entries[name] = copy.deepcopy(source) if isinstance(source, dict) else {"hand_color": "gold"}
     added.extra["frame_style"] = name
-    ensure_switch(project)
     return name
 
 

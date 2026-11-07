@@ -566,10 +566,15 @@ class FramesPage(ttk.Frame):
                 part.setdefault("x", x); part.setdefault("y", y)
                 part.setdefault("width", w); part.setdefault("height", h)
 
+    def variant_designs(self):
+        '''The styles that are one variant's own design: made and edited in the Variants tab, not listed here.'''
+        from . import variants
+        return {variants.design_name(added.key) for added in self.project.added.values()}
+
     def fill(self):
         if self.project is None: return
         styles = self.styles_dict()
-        names = list(styles) or ["custom"]
+        names = [name for name in styles if self.locked is not None or name not in self.variant_designs()] or ["custom"]
         if self.style_name.get() not in names: self.style_name.set(names[0])
         self.style_list.delete(0, "end")
         for name in names:

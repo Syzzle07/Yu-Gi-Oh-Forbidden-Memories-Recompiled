@@ -2,7 +2,7 @@
 "Variants"): another picture and, if the modder likes, a frame of its own, won in
 the card's place by a chance. Pick the card, the picture, the frame and the
 chance, and the tab writes everything the game reads (the card's entry, the
-picture, the frame style and its picture, the "Special frames" switch).
+picture, the frame style and its picture).
 
 The list is the mod's variants by their card; beside it, the card as the
 game lays it out (the picture in its frame's window, the frame over it) and what

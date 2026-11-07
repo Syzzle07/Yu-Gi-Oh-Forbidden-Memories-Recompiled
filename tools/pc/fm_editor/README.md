@@ -464,9 +464,9 @@ strip above it from y 3 for the name, and a band under it from y 146 for the
 stars, the element and ATK and DEF. The editor writes the variant's entry
 (`copy`, `id`, `variant_permille`, `variant_label`, `art`, `frame_style`), the
 picture in `art/`, the frame style in `card_layout` with its picture in
-`frames/` (and the parts the game places on it), and a "Special frames" setting
-of the mod (on from the start) that turns its frames on and off in the Mods
-window. It writes no `name`: the variant keeps its card's own name plate, in the
+`frames/` (and the parts the game places on it). It writes no setting: the game
+draws a frame style of a mod that holds only styles for the cards that name it,
+with nothing to switch on. It writes no `name`: the variant keeps its card's own name plate, in the
 game's lettering and in the language the player plays in. The mod needs mod API
 25, which the editor writes as `min_api`.
 

@@ -66,16 +66,13 @@ class VariantsTest(unittest.TestCase):
         self.assertEqual(entry["spell"]["art"], entry["art"])
         image = pngio.decode(self.project.files["frames/foil-rainbow.png"])
         self.assertEqual(image.size, (256, 512))
-        # Its switch is in the mod's settings, on from the start.
-        switch = [s for s in self.project.info.settings if s["key"] == "full_bleed"]
-        self.assertEqual(len(switch), 1)
-        self.assertEqual((switch[0]["type"], switch[0]["default"]), ("bool", 1))
-        # A second variant with the same preset shares the style, the picture and the switch.
+        # The mod needs no switch: a mod of styles alone has them on (card_layout.c).
+        self.assertEqual(self.project.info.settings, [])
+        # A second variant with the same preset shares the style and the picture.
         other, _ = variants.add_variant(self.project, 35, None, ("preset", "rainbow"), 100, "")
         self.assertEqual(self.project.added[other].extra["frame_style"], "foil-rainbow")
         self.assertEqual(list(self.project.other["card_layout"]["frame_styles"]), ["foil-rainbow"])
         self.assertEqual([k for k in self.project.files if k.startswith("frames/")], ["frames/foil-rainbow.png"])
-        self.assertEqual(len([s for s in self.project.info.settings if s["key"] == "full_bleed"]), 1)
         self.assertNotIn("variant_label", self.project.added[other].extra)
         # Each preset is a picture the editor carries.
         for name in frame_presets.PRESETS:
@@ -182,7 +179,7 @@ class VariantsTest(unittest.TestCase):
         alt = next(e for e in written["cards"] if e.get("id") == "dm-alt")
         self.assertNotIn("frame_style", alt)
         self.assertIn("foil-gold", written["card_layout"]["frame_styles"])
-        self.assertEqual([s["key"] for s in written["settings"]], ["full_bleed"])
+        self.assertNotIn("settings", written)
         self.assertEqual(written["min_api"], compat.HOST_API)
         for file in ("art/bewd-gold.png", "art/dm-alt.png", "frames/foil-gold.png"):
             self.assertTrue((folder / file).is_file(), file)
@@ -498,24 +495,40 @@ class VariantsTabTest(GuiCase):
         self.assertNotIn("frame_style", project.added[cid].extra)
         self.assertEqual((tab.plain.winfo_manager(), tab.design_box.winfo_manager()), ("grid", ""))
 
-    def test_the_info_tab_keeps_the_switch_a_variant_added(self):
-        tab, project = self.app.variants, self.app.project
+    def test_the_info_tab_keeps_a_setting_another_tab_added(self):
+        project = self.app.project
         self.app.info.refresh()                        # the Info tab shows the mod without the setting
         self.assertEqual(project.info.settings, [])
-        tab.make(1, picture(204, 192, (200, 30, 30, 255)), ("preset", "gold"), 50, "Gold")
-        self.assertEqual([s["key"] for s in project.info.settings], ["full_bleed"])
+        project.info.settings.append({"key": "extra", "label": "Extra", "type": "bool", "default": 1})
         # Saving applies the Info tab: its stale box must not take the setting away.
         self.assertTrue(self.app.info.commit())
-        self.assertEqual([s["key"] for s in project.info.settings], ["full_bleed"])
+        self.assertEqual([s["key"] for s in project.info.settings], ["extra"])
         folder = Path(self.tmp.name) / "saved"
         manifest.save_mod(project, folder)
         written = json.loads((folder / "mod.json").read_text(encoding="utf-8"))
-        self.assertEqual([s["key"] for s in written["settings"]], ["full_bleed"])
+        self.assertEqual([s["key"] for s in written["settings"]], ["extra"])
         # Typed in the box, it still applies.
         self.app.info.refresh()
         self.app.info.settings.delete("1.0", "end")
         self.assertTrue(self.app.info.commit())
         self.assertEqual(project.info.settings, [])
+
+    def test_a_variants_design_is_not_listed_in_the_ui_tab(self):
+        tab, project = self.app.variants, self.app.project
+        cid = tab.make(1, picture(204, 192, (200, 30, 30, 255)), ("preset", "gold"), 50, "Mine")
+        name = variants.design_name(project.added[cid].key)
+        tab.show(cid)
+        self.assertIsNotNone(tab.design())
+        self.assertIn(name, variants.styles(project))
+        page = self.app.ui.pages["frames"]
+        page.fill()
+        listed = list(page.style_list.get(0, "end"))
+        self.assertNotIn(name, listed)                    # designed in the Variants tab only
+        self.assertIn("foil-gold", listed)                # a preset's style is the modder's to edit there
+        # The mod's own styles of other names are listed as ever.
+        variants.styles(project)["mine"] = {"hand_color": "gold"}
+        page.fill()
+        self.assertIn("mine", page.style_list.get(0, "end"))
 
     def test_a_design_without_a_frame_picture(self):
         tab, project = self.app.variants, self.app.project
