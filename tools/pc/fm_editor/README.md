@@ -498,9 +498,13 @@ picture made beforehand: a **background** (the square of the picture) and a **fo
 figure on a clear background, say) over it. Each is placed on the card in card units (x, y and
 width, the card being 140 x 196; the first place of the background is the game's picture window, the
 foreground's the card's width down to its bottom edge) and what runs past the card is cut off. The
-preview lays them on the game's own frame. OK composes them into the card's picture as **Full art**
-does, and keeps the two files and their places in the mod (`art/layers/`) so **Layers...**
-shows them again to change; the game reads only the composed picture.
+preview lays them on the game's own frame. The hand's small card has other proportions, so
+**Place them on the hand's card** gives each layer a place of its own there (in a 52 x 60 card), starting in
+proportion to the card's. OK composes the card's picture as **Full art** does and the hand's small picture,
+and keeps the two files and their places in the mod (`art/layers/`) so **Layers...** shows them again to
+change; the game reads only the composed pictures. In the designer, the hand's **Artwork** has its own
+**Choose PNG...** too: a small picture of its own for the hand (the card's thumbnail, kept whole and see-through
+where it is clear); **Remove image** makes it from the card's picture again.
 
 **Design the card** is for a card that is more than a recolored frame. It shows
 the UI tab's Frames designer in the tab itself, beside the list, on a frame style that is this variant's alone (a

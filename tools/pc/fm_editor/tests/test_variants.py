@@ -5,7 +5,9 @@ back, and the checks. On synthetic data:
 """
 import json
 import tempfile
+import tkinter as tk
 import unittest
+from tkinter import ttk
 from pathlib import Path
 from unittest import mock
 
@@ -417,6 +419,22 @@ class VariantsTest(unittest.TestCase):
         self.assertEqual(sorted(again), ["background", "foreground"])
         self.assertEqual(again["foreground"][1], {"x": 40, "y": 20, "width": 40})
         self.assertEqual(again["background"][0].size, (10, 10))
+        # The hand's small card has its own places: in proportion when not given (the card's 140 x 196 on its 52 x 60).
+        self.assertEqual(again["foreground"][2], variants.default_hand_layer({"x": 40, "y": 20, "width": 40}))
+        self.assertEqual(variants.default_hand_layer({"x": 70, "y": 98, "width": 140}), {"x": 26.0, "y": 30.0, "width": 52.0})
+        small = art.state(self.project).images[(cid, "thumbnail")].image
+        self.assertEqual(small.width * 32, small.height * 40)                       # the small picture's shape
+        self.assertFalse(small.opaque())
+        # Given, they are the picture of the hand: a layer put elsewhere there than on the card.
+        variants.set_layers(self.project, cid, {"background": (red, {"x": 0, "y": 0, "width": 140}, {"x": 0, "y": 0, "width": 26})})
+        kept = variants.read_layers(self.project, cid)["background"]
+        self.assertEqual(kept[2], {"x": 0, "y": 0, "width": 26})
+        hand = variants.compose_layers([(red, 0, 0, 26)], scale=1, units=variants.HAND_SIZE)
+        self.assertEqual((hand.width, hand.height), (52, 60))
+        self.assertEqual(hand.rgba[3], 255)
+        self.assertEqual(hand.rgba[(0 * 52 + 40) * 4 + 3], 0)                        # past its layer: clear
+        small_card = variants.hand_picture(hand, None, 52)
+        self.assertEqual((small_card.width, small_card.height), (52, 60))
         # One layer alone, and the other taken away from what is kept; none is refused.
         variants.set_layers(self.project, cid, {"background": (red, {"x": 0, "y": 0, "width": 140})})
         self.assertEqual(sorted(variants.read_layers(self.project, cid)), ["background"])
@@ -880,6 +898,85 @@ class VariantsTabTest(GuiCase):
         self.assertIsNone(ui_frames.hand_frame(b"x" * 10, 9))
         page.pick("hand")
         page.draw()                       # nothing on the disc of the fixture: the plain picture, and no failure
+
+    def test_the_layers_dialog_and_the_hands_own_picture(self):
+        from fm_editor import variants_tab
+        tab, project = self.app.variants, self.app.project
+        cid = tab.make(35, None, None, 50, "Layered")
+        tab.show(cid)
+        folder = Path(self.tmp.name)
+        pngio.write(folder / "back.png", picture(20, 20, (20, 60, 160, 255)))
+        figure = bytearray()
+        for y in range(40):
+            for x in range(20):
+                figure += bytes((220, 40, 40, 255)) if 6 <= x < 14 and 4 <= y < 36 else bytes((0, 0, 0, 0))
+        pngio.write(folder / "figure.png", Image(20, 40, bytes(figure)))
+        made = {}
+
+        def fake_dialog(master, title, build, ok):
+            window = tk.Toplevel(master)
+            body = ttk.Frame(window)
+            body.pack()
+            build(window, body)
+            made.update(window=window, ok=ok)
+
+        def buttons(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from buttons(child)
+
+        paths = iter((str(folder / "back.png"), str(folder / "figure.png")))
+        with mock.patch.object(variants_tab, "FormDialog", fake_dialog), \
+                mock.patch("fm_editor.variants_tab.file_dialogs.askopenfilename", side_effect=lambda **o: next(paths)):
+            tab.layers()
+            window = made["window"]
+            chooses = [b for b in buttons(window) if isinstance(b, ttk.Button) and b.cget("text") == "Choose..."]
+            self.assertEqual(len(chooses), 2)
+            for button in chooses:
+                button.invoke()
+            self.app.update()
+            # Both sets of places were filled: the card's, and the hand's in proportion.
+            sets = window.sets
+            card_boxes = [b for b in buttons(sets["card"]) if isinstance(b, ttk.Spinbox)]
+            hand_boxes = [b for b in buttons(sets["hand"]) if isinstance(b, ttk.Spinbox)]
+            self.assertEqual(len(card_boxes), 6)
+            self.assertEqual(card_boxes[0].get(), "19")                      # the background's x: the game's window
+            self.assertEqual(card_boxes[2].get(), "102")
+            self.assertEqual(hand_boxes[2].get(), "37.9")                    # 102 on the hand's 52 / 140
+            self.assertEqual(sets["card"].winfo_manager(), "grid")
+            self.assertEqual(sets["hand"].winfo_manager(), "")
+            # The foreground put somewhere else on the hand's card than on the card.
+            radios = [b for b in buttons(window) if isinstance(b, ttk.Radiobutton)]
+            radios[1].invoke()
+            self.assertEqual((sets["card"].winfo_manager(), sets["hand"].winfo_manager()), ("", "grid"))
+            hand_boxes[3].delete(0, "end"); hand_boxes[3].insert(0, "-5")      # the foreground's x
+            self.assertIsNone(made["ok"](window))
+            window.destroy()
+        layers = variants.read_layers(project, cid)
+        self.assertEqual(sorted(layers), ["background", "foreground"])
+        self.assertEqual(layers["foreground"][2]["x"], -5.0)
+        self.assertEqual(layers["background"][2]["width"], 37.9)
+        self.assertEqual(layers["background"][1]["width"], 102)
+        self.assertIn((cid, "thumbnail"), art.state(project).images)
+        self.assertIs(project.added[cid].extra["art_transparent"], True)
+        # The hand's Artwork has a picture of its own (the card's small one) to choose in the designer.
+        page = tab.designer
+        small = folder / "small.png"
+        pngio.write(small, picture(40, 32, (1, 200, 1, 255)))
+        before = art.state(project).images[(cid, "thumbnail")].image
+        page.pick("hand_art")
+        self.assertEqual(str(page.choose.cget("state")), "normal")                 # the hand's Artwork can take a picture
+        with mock.patch("fm_editor.file_dialogs.askopenfilename", return_value=str(small)):
+            page.choose_image()
+        after = art.state(project).images[(cid, "thumbnail")].image
+        self.assertNotEqual(after.rgba[:4], before.rgba[:4])
+        self.assertEqual(after.rgba[:3], bytes((1, 200, 1)))
+        self.assertEqual(project.added[cid].extra["art_transparent"], True)         # kept: the card's own picture needs it
+        art_before = art.state(project).images[(cid, "art")].image
+        page.remove_image()
+        self.assertNotIn((cid, "thumbnail"), art.state(project).images)             # made from the card's picture again
+        self.assertEqual(art.state(project).images[(cid, "art")].image.rgba[:8], art_before.rgba[:8])
+        self.assertEqual(errors(project), [])
 
     def test_a_variants_design_is_not_listed_in_the_ui_tab(self):
         tab, project = self.app.variants, self.app.project

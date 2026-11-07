@@ -508,11 +508,15 @@ def default_layer(name: str, image) -> dict:
             "width": frame_presets.CARD_W}
 
 
-def compose_layers(layers, scale: int = 4) -> pngio.Image:
-    """The card-sized picture (140 x 196 units, `scale` pixels a unit) made of `layers`, bottom first: each
-    (image, x, y, width) in card units, its height from its own shape, laid by its alpha over what is under it.
-    What no layer covers stays clear, and what runs past the card's edge is cut off."""
-    width, height = frame_presets.CARD_W * scale, frame_presets.CARD_H * scale
+HAND_SIZE = (52, 60)         # the duel hand's small card, in units
+
+
+def compose_layers(layers, scale: int = 4, units=None) -> pngio.Image:
+    """The card-sized picture (140 x 196 units, or `units`, `scale` pixels a unit) made of `layers`, bottom first:
+    each (image, x, y, width) in card units, its height from its own shape, laid by its alpha over what is under
+    it. What no layer covers stays clear, and what runs past the card's edge is cut off."""
+    units = units or (frame_presets.CARD_W, frame_presets.CARD_H)
+    width, height = units[0] * scale, units[1] * scale
     out = bytearray(width * height * 4)
     for image, x, y, layer_width in layers:
         w = max(1, round(layer_width * scale))
@@ -542,12 +546,26 @@ def compose_layers(layers, scale: int = 4) -> pngio.Image:
     return pngio.Image(width, height, bytes(out))
 
 
+def default_hand_layer(place: dict) -> dict:
+    """Where a layer goes on the hand's small card (52 x 60 units) when it is at `place` on the card: the same place
+    in proportion, its shape kept."""
+    scale_x = HAND_SIZE[0] / frame_presets.CARD_W
+    return {"x": round(place["x"] * scale_x, 1), "y": round(place["y"] * HAND_SIZE[1] / frame_presets.CARD_H, 1),
+            "width": max(1, round(place["width"] * scale_x, 1))}
+
+
 def _layer_file(key: str, name: str) -> str:
     return f"{LAYERS_DIR}/{key}-{name}.png"
 
 
+def _place(value):
+    numbers = {k: value[k] for k in ("x", "y", "width") if isinstance(value, dict) and isinstance(value.get(k), (int, float))}
+    return numbers if len(numbers) == 3 else None
+
+
 def read_layers(project, cid: int) -> dict:
-    """The layers a variant's picture was made of: {name: (image, {"x", "y", "width"})}; {} when it was not."""
+    """The layers a variant's picture was made of: {name: (image, place on the card, place on the hand's small
+    card)}, each place {"x", "y", "width"} (the hand's None when it was not given); {} when it was not made of layers."""
     key = project.added[cid].key
     data = _held(project, f"{LAYERS_DIR}/{key}.json")
     if data is None:
@@ -562,38 +580,60 @@ def read_layers(project, cid: int) -> dict:
         picture = _held(project, _layer_file(key, name))
         if not isinstance(place, dict) or picture is None:
             continue
-        numbers = {k: place[k] for k in ("x", "y", "width") if isinstance(place.get(k), (int, float))}
+        numbers = _place(place)
         try:
             image = pngio.decode(picture)
         except (pngio.PngError, ValueError):
             continue
-        if len(numbers) == 3:
-            found[name] = (image, numbers)
+        if numbers:
+            found[name] = (image, numbers, _place(place.get("hand")))
     return found
 
 
 def set_layers(project, cid: int, layers: dict) -> list:
-    """The variant's picture made of `layers` ({name: (image, {"x", "y", "width"})}, a background and/or a
-    foreground): they are kept in the mod (art/layers/) to be changed again, composed into one picture, and
-    the card made a full art one (set_art) with that picture. Notes on the picture."""
-    chosen = [(name, *layers[name]) for name in LAYER_NAMES if layers.get(name)]
+    """The variant's picture made of `layers` ({name: (image, place[, hand place])}, places {"x", "y", "width"} in
+    units: on the card, and on the hand's small card, in proportion when not given; a background and/or a
+    foreground): they are kept in the mod (art/layers/) to be changed again, composed into the card's picture and
+    into the small one the hand shows, and the card made a full art one (set_art). Notes on the picture."""
+    chosen = []
+    for name in LAYER_NAMES:
+        if layers.get(name):
+            image, place, *hand = layers[name]
+            chosen.append((name, image, place, (hand[0] if hand and hand[0] else None) or default_hand_layer(place)))
     if not chosen:
         raise ValueError("choose a picture for at least one layer")
-    for name, image, place in chosen:
-        if place["width"] < 1:
+    for name, image, place, hand in chosen:
+        if place["width"] < 1 or hand["width"] < 1:
             raise ValueError(f"the {name}'s width is at least 1 unit")
     key = project.added[cid].key
-    composed = compose_layers([(image, p["x"], p["y"], p["width"]) for _, image, p in chosen])
+    composed = compose_layers([(image, p["x"], p["y"], p["width"]) for _, image, p, _ in chosen])
     notes = set_art(project, cid, composed, whole=True)
+    small = compose_layers([(image, h["x"], h["y"], h["width"]) for _, image, _, h in chosen], units=HAND_SIZE)
+    art.set_image(project, cid, "thumbnail", small, whole=True)          # the picture the hand's card shows
+    if not small.opaque():
+        project.added[cid].extra["art_transparent"] = True
     spec = {}
-    for name, image, place in chosen:
+    for name, image, place, hand in chosen:
         project.files[_layer_file(key, name)] = pngio.encode(image)
-        spec[name] = {"x": place["x"], "y": place["y"], "width": place["width"]}
+        spec[name] = {"x": place["x"], "y": place["y"], "width": place["width"],
+                      "hand": {"x": hand["x"], "y": hand["y"], "width": hand["width"]}}
     project.files[f"{LAYERS_DIR}/{key}.json"] = json.dumps(spec, indent=1).encode("utf-8")
     for name in LAYER_NAMES:                                  # a layer taken away is not kept
         if name not in spec:
             project.files.pop(_layer_file(key, name), None)
     return notes
+
+
+def hand_picture(art_image, frame_image, width: int = 104) -> pngio.Image:
+    """The duel hand's small card (52 x 60 units, `width` pixels across): the game's own card behind, the picture
+    laid over the whole of it, as the game draws the small picture. Either may be None."""
+    height = round(width * HAND_SIZE[1] / HAND_SIZE[0])
+    canvas = pngio.Image(width, height, bytes((0x20, 0x20, 0x28, 255)) * (width * height))
+    if frame_image is not None:
+        canvas = over(canvas, pngio.scale_to(frame_image, width, height))
+    if art_image is not None:
+        canvas = over(canvas, pngio.scale_to(art_image, width, height))
+    return canvas
 
 
 def card_picture(art_image, frame_image, width: int = 140, window: dict = None) -> pngio.Image:

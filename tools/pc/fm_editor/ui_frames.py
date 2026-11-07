@@ -744,6 +744,8 @@ class FramesPage(ttk.Frame):
         if game_hand: stage.picture("hand", game_hand, x, y, box=(x, y, w, h), high_quality=True)
         else: self.paint_picture(stage, "hand", x, y, w, h)
         retail_art = art.in_game(self.project, wa, self.preview_card_id(), "art") if wa else None
+        if wa and self.locked is not None:          # a card's own: the small picture the game draws there
+            retail_art = art.in_game(self.project, wa, self.preview_card_id(), "thumbnail") or retail_art
         try:
             font = card_text.RetailFont(wa) if wa else None
         except ValueError:
@@ -1009,6 +1011,13 @@ class FramesPage(ttk.Frame):
             self.tint.set(tint_value(self.part(key).get("color")))
         image = self.asset(key); self.image_name.configure(text=image or "the game's artwork")
         editable_image = key in DIRECT_ASSETS or (key in IMAGE_PARTS and (key != "stars" or self.locked is not None))
+        hand_art = key == "hand_art" and self.hand_picture_of_card() is not None
+        if hand_art:
+            # The card's small picture: its own, or made from the card's picture when it has none of its own.
+            own = (self.hand_picture_of_card(), "thumbnail") in art.state(self.project).images
+            image = "the card's small picture" if own else None
+            self.image_name.configure(text=image or "made from the card's picture")
+            editable_image = True
         for widget in (self.shape_label, self.shapes):
             (widget.grid if key == "stars" and self.locked is not None else widget.grid_remove)()
         if key == "stars": self.shape.set(self.shape_of(image))
@@ -1044,12 +1053,45 @@ class FramesPage(ttk.Frame):
                 limit = 420 if name == "width" else 590 if name == "height" else 320
         set_member(part, name, max(minimum, min(limit, value)), default); self.done()
 
+    def hand_picture_of_card(self):
+        """The card whose small picture the hand's Artwork is, when this page designs one card (the Variants tab)."""
+        cid = self.card.get() if self.locked is not None else None
+        return cid if cid in getattr(self.project, "added", {}) else None
+
+    def choose_hand_art(self):
+        """The hand's Artwork: its own picture, the card's small one (the game draws it into the box), kept whole and
+        see-through where it is clear; the card's picture is not changed."""
+        from . import file_dialogs
+        cid = self.hand_picture_of_card()
+        if cid is None: return
+        path = file_dialogs.askopenfilename(parent=self, title="A small picture for the hand",
+                                            filetypes=[("Pictures", "*.png *.jpg *.jpeg"), ("PNG images", "*.png"),
+                                                       ("All files", "*.*")])
+        if not path: return
+        try:
+            image = pngio.read(path)
+            art.set_image(self.project, cid, "thumbnail", image, whole=True)
+        except (OSError, pngio.PngError, ValueError) as problem:
+            messagebox.showerror("FM Editor", f"Could not use {path}: {problem}", parent=self)
+            return
+        extra = self.project.added[cid].extra
+        if not image.opaque(): extra["art_transparent"] = True
+        self.done()
+
+    def remove_hand_art(self):
+        cid = self.hand_picture_of_card()
+        if cid is not None and (cid, "thumbnail") in art.state(self.project).images:
+            art.revert(self.project, cid, "thumbnail")
+            self.done()
+
     def choose_image(self):
+        if self.chosen == "hand_art" and self.hand_picture_of_card() is not None: return self.choose_hand_art()
         if self.chosen not in DIRECT_ASSETS | IMAGE_PARTS: return
         image = import_image(self, self.project, f"{self.style_name.get()}-{self.chosen}", FRAME_IMAGE_DIR)
         if image: self.set_asset(self.chosen, image); self.done()
 
     def remove_image(self):
+        if self.chosen == "hand_art" and self.hand_picture_of_card() is not None: return self.remove_hand_art()
         if self.chosen in DIRECT_ASSETS | IMAGE_PARTS:
             self.set_asset(self.chosen, None); self.done()
 
