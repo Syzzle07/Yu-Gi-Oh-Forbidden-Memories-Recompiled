@@ -534,7 +534,7 @@ one. A digit strip or label picture of your own is used as it is.
 
 A variant is its own card in a deck (a deck holds three of a card and its
 variants together) and in the chest; the Library shows a card and its variants
-as one entry, and steps through them with L1 and R1. See
+as one entry (and the Build Deck's chest as one row), and steps through them with L3 and R3. See
 [Variants](../../../notes/more-cards.md#variants-alternate-versions-of-a-card)
 and [Layouts of several mods](../../../notes/modding.md#layouts-of-several-mods).
 Remove takes a variant out; the frame it used stays in the mod.
