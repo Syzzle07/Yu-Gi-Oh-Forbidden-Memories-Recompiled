@@ -359,14 +359,16 @@ static unsigned short variant_start[2][CARD_ID_END + 1];
  * that is the card's alternate version, won in its place by a chance of its
  * own. Per variant: the retail card it is a version of (0: not a variant), its
  * chance in thousandths, whether the CPU's deals roll it too, and its label.
- * The family index lists each base's variants, in card order. */
+ * The family index lists each base's variants, in card order. The base is a retail
+ * card or a card another entry added (a variant's "copy" then is that card's
+ * identity); a variant is never the base of another. */
 #define VARIANT_LABEL_MAX 24
 static unsigned short variant_base[CARD_TABLE_ID_END];
 static unsigned short variant_permille[CARD_TABLE_ID_END];
 static unsigned char variant_opponents[CARD_TABLE_ID_END];
 static char *variant_label[CARD_TABLE_ID_END];
 static unsigned short *family_members;
-static unsigned short family_start[CARD_ID_END + 1];
+static unsigned short family_start[CARD_TABLE_ID_END + 1];
 
 static void say(const char *format, ...)
 {
@@ -1328,6 +1330,7 @@ int Cards_InFusionGroup(int id, int group)
 typedef struct {
     int use_count[2][CARD_ID_END];  /* copies taking a base's place, per use */
     unsigned char use[CARD_TABLE_ID_END];
+    int pass;                       /* 0: every entry but the variants; 1: the variants, so that they have the last ids */
 } BuildContext;
 
 static int clamp(int value, int low, int high)
@@ -1491,9 +1494,19 @@ static int notes_only(const JsonValue *entry)
     return Json_Member(entry, "notes") != NULL;
 }
 
-/* The entry's "variant_permille": the card `id`, a copy of retail card `base`,
- * is a variant of it. 1 when it is one. A chance outside 1 to 1000, a base of
- * Exodia and a label without a chance are noted and left out. */
+/* A card another entry added, by its identity: "mod-id:key" (the entry's first card) or "mod-id:key:n". 0 for none. */
+static int mod_card_named(const char *text)
+{
+    char full[200];
+    int id = Cards_FindIdentity(text);
+    if (id > CARD_COUNT) return id;
+    if (snprintf(full, sizeof(full), "%s:1", text) < (int)sizeof(full)) id = Cards_FindIdentity(full);
+    return id > CARD_COUNT ? id : 0;
+}
+
+/* The entry's "variant_permille": the card `id`, a copy of card `base` (a retail card, or one a mod added),
+ * is a variant of it. 1 when it is one. A chance outside 1 to 1000, a base of Exodia, a base that is a variant
+ * itself and a label without a chance are noted and left out. */
 static int add_variant(const char *mod, int index, const JsonValue *entry, int id, int base)
 {
     const JsonValue *chance = Json_Member(entry, "variant_permille");
@@ -1509,8 +1522,12 @@ static int add_variant(const char *mod, int index, const JsonValue *entry, int i
         Mods_Note(mod, "cards[%d]: \"variant_permille\" is the chance in thousandths, 1 to 1000 (50 is 5%%)", index);
         return 0;
     }
-    if (base < CARD_ID_FIRST || base > CARD_COUNT || Cards_ExodiaPiece(base)) {
-        Mods_Note(mod, "cards[%d]: a variant must copy a retail card that is not a piece of Exodia", index);
+    if (base < CARD_ID_FIRST || base > gCard_nCount || Cards_ExodiaPiece(Cards_BaseId(base))) {
+        Mods_Note(mod, "cards[%d]: a variant must copy a card that is not a piece of Exodia", index);
+        return 0;
+    }
+    if (variant_base[base]) {
+        Mods_Note(mod, "cards[%d]: a variant cannot copy a variant: copy its card", index);
         return 0;
     }
     free(variant_label[id]);
@@ -1542,7 +1559,8 @@ static void add_entry(const char *mod, const char *directory, int index, const J
     const JsonValue *password_value = Json_Member(entry, "password");
     unsigned char *record = NULL, *title = NULL, *named_plate = NULL, *field_art_record = NULL;
     int parts = 0;
-    int base = 0, count, n, value, has_password;
+    int base = 0, origin, count, n, value, has_password;
+    int variant_of_mod_card = 0;    /* a variant of a card another entry added: it has that card's name and pictures */
     unsigned stats, password = CARD_PASSWORD_NONE, entry_fusion_groups = 0;
     int entry_has_fusion_groups = 0;
     int was_monster, stars_given = 0, logical_type;
@@ -1563,17 +1581,22 @@ static void add_entry(const char *mod, const char *directory, int index, const J
         return;
     }
     if (Json_TypeOf(copy) == JSON_STRING && !isdigit((unsigned char)*Json_String(copy, "")) ) {
-        base = retail_by_name(Json_String(copy, ""));
+        const char *text = Json_String(copy, "");
+        /* A variant may be of a card another entry added, named by its identity. */
+        base = !replace && Json_Member(entry, "variant_permille") && strchr(text, ':') ? mod_card_named(text)
+                                                                                     : retail_by_name(text);
     } else {
         /* narrow(): a "copy"/"replace" far past int range would otherwise
          * wrap into 1..CARD_COUNT and pass the check just below. */
         base = narrow(Json_Number(copy, 0));
     }
-    if (base < 1 || base > CARD_COUNT) {
-        Mods_Note(mod, "cards[%d]: \"%s\" must name a card of the disc, 1 to %d", index, replace ? "replace" : "copy",
-                  CARD_COUNT);
+    variant_of_mod_card = base > CARD_COUNT && base <= gCard_nCount && !replace && Json_Member(entry, "variant_permille");
+    if ((base < 1 || base > CARD_COUNT) && !variant_of_mod_card) {
+        Mods_Note(mod, "cards[%d]: \"%s\" must name a card of the disc, 1 to %d%s", index, replace ? "replace" : "copy",
+                  CARD_COUNT, Json_Member(entry, "variant_permille") ? ", or a card a mod added (\"mod-id:key\")" : "");
         return;
     }
+    origin = Cards_BaseId(base);   /* the card of the disc that base is, or is a copy of */
     if (replace && notes_only(entry)) {
         add_notes(mod, index, base, Json_Member(entry, "notes"));
         return;
@@ -1774,6 +1797,10 @@ static void add_entry(const char *mod, const char *directory, int index, const J
             }
         }
     }
+    if (variant_of_mod_card && !entry_has_fusion_groups) {
+        entry_fusion_groups = fusion_groups[base];
+        entry_has_fusion_groups = has_fusion_groups[base];
+    }
     /* Left out, the frame is the base's (its type's unless an earlier entry
      * chose one); "type" goes back to the type's. */
     frame = frames[base];
@@ -1924,7 +1951,7 @@ static void add_entry(const char *mod, const char *directory, int index, const J
         if (n == 1 && (value < 0 || value > CARD_COUNT))
             Mods_Note(mod, "cards[%d]: \"effect\" must name a card of the disc", index);
         effect_ids[id] = (unsigned short)(value >= 1 && value <= CARD_COUNT ? value : Cards_EffectId(base));
-        gCard_awBaseId[id] = (unsigned short)base;
+        gCard_awBaseId[id] = (unsigned short)origin;
         gCard_asNameSortKey[id - 1] = gCard_asNameSortKey[base - 1];
     own:
         if (effect_count >= 0) {
@@ -1981,16 +2008,17 @@ static void add_entry(const char *mod, const char *directory, int index, const J
         frames[id] = frame;
         snprintf(frame_style_names[id], sizeof(frame_style_names[id]), "%s", frame_style);
         tag_masks[id] = tags;
-        names[id] = name && *name ? encode_name(mod, name, n, id) : NULL;
-        descriptions[id] = description && *description ? encode_description(mod, description, id) : NULL;
+        names[id] = name && *name ? encode_name(mod, name, n, id) : variant_of_mod_card ? names[base] : NULL;
+        descriptions[id] = description && *description ? encode_description(mod, description, id)
+                           : variant_of_mod_card ? descriptions[base] : NULL;
         add_notes(mod, index, id, Json_Member(entry, "notes"));
         /* Reset as names and descriptions are, so a later mod's entry for
          * the same card without one does not keep an earlier mod's. */
         own_password[id] = (unsigned char)(has_password != 0);
         if (has_password) passwords[id] = password;
-        art_records[id] = parts ? record : NULL;
-        art_parts[id] = (unsigned char)parts;
-        field_art_records[id] = field_art_record;
+        art_records[id] = parts ? record : variant_of_mod_card ? art_records[base] : NULL;
+        art_parts[id] = (unsigned char)(parts ? parts : variant_of_mod_card ? art_parts[base] : 0);
+        field_art_records[id] = field_art_record ? field_art_record : variant_of_mod_card ? field_art_records[base] : NULL;
         if (title) {
             plates[id] = title;
         } else if (name && *name && (!named_plate || strstr(name, "{n}") || strstr(name, "{id}"))) {
@@ -2015,8 +2043,8 @@ static void add_entry(const char *mod, const char *directory, int index, const J
         } else {
             /* Neither: the plate goes with the name, so a later mod's
              * replace that gives none shows the card's own name on the
-             * picture too, not an earlier mod's plate. */
-            plates[id] = NULL;
+             * picture too, not an earlier mod's plate. A variant of a card a mod added has its plate. */
+            plates[id] = variant_of_mod_card ? plates[base] : NULL;
         }
         if (replace) {
             if (Json_Member(entry, "variant_permille") || Json_Member(entry, "variant_label"))
@@ -2028,6 +2056,12 @@ static void add_entry(const char *mod, const char *directory, int index, const J
             context->use[id] = 0;
             continue;
         }
+        if (variant_of_mod_card) {
+            /* A mistake (noted) in a variant of a card a mod added: the card is there, with that card's look, but it
+             * is won by no share (the shares are of the disc's cards). */
+            context->use[id] = 0;
+            continue;
+        }
         context->use[id] = (unsigned char)((Json_Bool(Json_Member(entry, "drops"), 1) ? 1 : 0) |
                                            (Json_Bool(Json_Member(entry, "opponents"), 0) ? 2 : 0));
         if (context->use[id] & 1) context->use_count[CARDS_USE_DROP][base]++;
@@ -2035,11 +2069,11 @@ static void add_entry(const char *mod, const char *directory, int index, const J
     }
     if (replace) {
         char text[128];
-        retail_name(base, text, sizeof(text));
+        retail_name(origin, text, sizeof(text));
         say("%s: card %d %s replaced", mod, base, text);
     } else if (count) {
         char text[128];
-        retail_name(base, text, sizeof(text));
+        retail_name(origin, text, sizeof(text));
         say("%s: cards %d-%d are copies of %d %s", mod, gCard_nCount - count + 1, gCard_nCount, base, text);
     }
 }
@@ -2054,11 +2088,21 @@ static void count_mod(const char *mod, const char *directory, const struct JsonV
     entries_total += (unsigned)Json_Count(cards);
 }
 
+/* The pass an entry is made in: a variant (a copy with "variant_permille") in the second, after every other card
+ * of every mod, so that the cards the mods add follow the disc's without a gap and a variant can be of any of
+ * them; the rest in the first. */
+static int entry_pass(const struct JsonValue *entry)
+{
+    return Json_TypeOf(entry) == JSON_OBJECT && !Json_Member(entry, "replace") && Json_Member(entry, "variant_permille")
+               ? 1 : 0;
+}
+
 static void add_mod(const char *mod, const char *directory, const struct JsonValue *cards, void *context)
 {
     const struct JsonValue *entry;
     int i;
     for (i = 0, entry = Json_At(cards, 0); entry; i++, entry = Json_Next(entry)) {
+        if (entry_pass(entry) != ((BuildContext *)context)->pass) continue;
         add_entry(mod, directory, i, entry, context);
         Loading_Step("Cards", ++entries_done, entries_total);
     }
@@ -2068,27 +2112,33 @@ static void add_mod(const char *mod, const char *directory, const struct JsonVal
  * family queries. */
 static void build_family_index(void)
 {
-    int id, base, total = 0, fill[CARD_ID_END];
+    int id, base, total = 0;
+    int *fill;
     for (id = CARD_ID_END; id <= gCard_nCount; id++) {
         if (variant_base[id]) total++;
     }
     memset(family_start, 0, sizeof(family_start));
     if (!total) return;
-    for (id = CARD_ID_END; id <= gCard_nCount; id++) {
-        if (variant_base[id]) family_start[variant_base[id] + 1]++;
-    }
-    for (base = 1; base <= CARD_COUNT; base++) {
-        family_start[base + 1] = (unsigned short)(family_start[base + 1] + family_start[base]);
-        fill[base] = family_start[base];
-    }
+    fill = malloc(((size_t)gCard_nCount + 2) * sizeof(*fill));
     family_members = malloc((size_t)total * sizeof(unsigned short));
-    if (!family_members) {
+    if (!fill || !family_members) {
+        free(fill);
+        free(family_members);
+        family_members = NULL;
         memset(family_start, 0, sizeof(family_start));   /* no variants: every card stays itself */
         return;
     }
     for (id = CARD_ID_END; id <= gCard_nCount; id++) {
+        if (variant_base[id]) family_start[variant_base[id] + 1]++;
+    }
+    for (base = 1; base <= gCard_nCount; base++) {
+        family_start[base + 1] = (unsigned short)(family_start[base + 1] + family_start[base]);
+        fill[base] = family_start[base];
+    }
+    for (id = CARD_ID_END; id <= gCard_nCount; id++) {
         if (variant_base[id]) family_members[fill[variant_base[id]]++] = (unsigned short)id;
     }
+    free(fill);
 }
 
 void Cards_Build(void)
@@ -2111,6 +2161,9 @@ void Cards_Build(void)
     context = calloc(1, sizeof(*context));
     if (!context) return;
     Mods_VisitCards(count_mod, NULL);
+    context->pass = 0;
+    Mods_VisitCards(add_mod, context);
+    context->pass = 1;
     Mods_VisitCards(add_mod, context);
     Mods_SetCardResolver(Cards_FindIdentity);
     Mods_SetOverlapCards(overlap_card, Cards_NameUtf8, overlap_card_info);
@@ -2653,7 +2706,7 @@ int Cards_VariantOf(int id)
 
 int Cards_VariantCount(int base)
 {
-    if (!family_members || base < CARD_ID_FIRST || base > CARD_COUNT) return 0;
+    if (!family_members || base < CARD_ID_FIRST || base > gCard_nCount) return 0;
     return family_start[base + 1] - family_start[base];
 }
 
@@ -2692,7 +2745,7 @@ int Cards_FamilyCopies(const unsigned char *quantities, int id)
 int Cards_PickVariant(int id, int use)
 {
     int first, count, pick;
-    if (use < 0 || use > 1 || id < CARD_ID_FIRST || id > CARD_COUNT) return id;
+    if (use < 0 || use > 1 || id < CARD_ID_FIRST || id > gCard_nCount) return id;
     /* The card's own variants first, each by its chance: one random number
      * apiece, and none for a card without any. */
     count = Cards_VariantCount(id);
@@ -2701,7 +2754,7 @@ int Cards_PickVariant(int id, int use)
         if (use == CARDS_USE_OPPONENT && !variant_opponents[variant]) continue;
         if ((unsigned)Memories_Rand() % 1000u < variant_permille[variant]) return variant;
     }
-    if (!variants[use]) return id;
+    if (!variants[use] || id > CARD_COUNT) return id;   /* the copies that take a card's place are of the disc's */
     first = variant_start[use][id];
     count = variant_start[use][id + 1] - first;
     if (!count) return id;

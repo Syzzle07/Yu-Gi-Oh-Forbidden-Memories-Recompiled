@@ -192,7 +192,9 @@ int main(void)
      * its drops evenly (the older way); card 17 (a piece of Exodia), a chance
      * of 0 and of 1001, a label with no chance and a replace with variant keys
      * are all noted and left out; card 5 has a variant the CPU rolls too; card
-     * 7 one with a label longer than the 24 letters kept. */
+     * 7 one with a label longer than the 24 letters kept. "own" is a card of the mod's own; "ownalt" a variant of it
+     * (its "copy" is its identity), "nested" one of a variant and "lost" one of a card nothing added. The variants
+     * are made after every other card, in file order. */
     write_text("mods/cardvariants/mod.json",
                "{\"id\":\"cardvariants\",\"cards\":["
                "{\"copy\":1,\"id\":\"alt1\",\"variant_permille\":50,\"variant_label\":\"Rainbow foil\"},"
@@ -204,7 +206,11 @@ int main(void)
                "{\"copy\":5,\"id\":\"cpu\",\"variant_permille\":1000,\"opponents\":true},"
                "{\"copy\":6,\"id\":\"label\",\"variant_label\":\"Alone\"},"
                "{\"copy\":7,\"id\":\"long\",\"variant_permille\":10,\"variant_label\":\"0123456789012345678901234567890\"},"
-               "{\"replace\":4,\"variant_permille\":10}]}");
+               "{\"replace\":4,\"variant_permille\":10},"
+               "{\"copy\":9,\"id\":\"own\",\"name\":\"Own\",\"description\":\"Its own words.\"},"
+               "{\"copy\":\"cardvariants:own\",\"id\":\"ownalt\",\"variant_permille\":300,\"variant_label\":\"Own alt\"},"
+               "{\"copy\":\"cardvariants:alt1\",\"id\":\"nested\",\"variant_permille\":100},"
+               "{\"copy\":\"cardvariants:nothing\",\"id\":\"lost\",\"variant_permille\":100}]}");
     write_text("settings.txt", "mod.cardvariants=1\n");
     snprintf(path, sizeof(path), "%s/mods", root);
     assert(!setenv("MEMORIES_MODS_DIR", path, 1));
@@ -217,29 +223,41 @@ int main(void)
 
     Cards_Build();
 
-    /* alt1 723, alt2 724, share 725, exodia 726, zero 727, huge 728, cpu 729,
-     * label 730, long 731. */
-    assert(gCard_nCount == CARD_COUNT + 9);
-    assert(Cards_VariantOf(723) == 1 && Cards_VariantOf(724) == 1);
-    assert(Cards_VariantOf(725) == 0);   /* a plain copy is not a variant */
-    assert(Cards_VariantOf(726) == 0 && Cards_VariantOf(727) == 0 && Cards_VariantOf(728) == 0);
-    assert(Cards_VariantOf(729) == 5 && Cards_VariantOf(730) == 0 && Cards_VariantOf(731) == 7);
+    /* The cards that are not variants first: share 723, label 724, own 725; then the variants, in file order: alt1 726,
+     * alt2 727, exodia 728, zero 729, huge 730, cpu 731, long 732, ownalt 733, nested 734. "lost" is no card. */
+    assert(gCard_nCount == CARD_COUNT + 12);
+    assert(Cards_VariantOf(726) == 1 && Cards_VariantOf(727) == 1);
+    assert(Cards_VariantOf(723) == 0);   /* a plain copy is not a variant */
+    assert(Cards_VariantOf(728) == 0 && Cards_VariantOf(729) == 0 && Cards_VariantOf(730) == 0);
+    assert(Cards_VariantOf(731) == 5 && Cards_VariantOf(724) == 0 && Cards_VariantOf(732) == 7);
     assert(Cards_VariantOf(1) == 0 && Cards_VariantOf(0) == 0 && Cards_VariantOf(gCard_nCount + 1) == 0);
-    assert(Cards_BaseId(723) == 1 && Cards_BaseId(729) == 5);
+    assert(Cards_BaseId(726) == 1 && Cards_BaseId(731) == 5);
+    /* A variant of a card a mod added: its base is that card, and what it is a copy of is that card's. */
+    assert(Cards_VariantOf(733) == 725 && Cards_BaseId(733) == 9 && Cards_BaseId(725) == 9);
+    assert(Cards_VariantOf(734) == 0);   /* a variant cannot copy a variant: it is no variant */
 
     /* The family index, in card order. */
-    assert(Cards_VariantCount(1) == 2 && Cards_VariantMember(1, 0) == 723 && Cards_VariantMember(1, 1) == 724);
+    assert(Cards_VariantCount(1) == 2 && Cards_VariantMember(1, 0) == 726 && Cards_VariantMember(1, 1) == 727);
     assert(Cards_VariantMember(1, 2) == 0 && Cards_VariantMember(1, -1) == 0);
     assert(Cards_VariantCount(2) == 0 && Cards_VariantCount(17) == 0 && Cards_VariantCount(0) == 0);
-    assert(Cards_VariantCount(5) == 1 && Cards_VariantCount(7) == 1 && Cards_VariantCount(723) == 0);
-    assert(Cards_VariantPermille(723) == 50 && Cards_VariantPermille(724) == 200 && Cards_VariantPermille(1) == 0);
-    assert(Cards_VariantLabel(723) && !strcmp(Cards_VariantLabel(723), "Rainbow foil"));
-    assert(!Cards_VariantLabel(724) && !Cards_VariantLabel(1));
-    assert(Cards_VariantLabel(731) && strlen(Cards_VariantLabel(731)) == 24);
+    assert(Cards_VariantCount(5) == 1 && Cards_VariantCount(7) == 1 && Cards_VariantCount(726) == 0);
+    assert(Cards_VariantCount(725) == 1 && Cards_VariantMember(725, 0) == 733 && Cards_VariantMember(725, 1) == 0);
+    assert(Cards_VariantCount(gCard_nCount + 1) == 0 && Cards_VariantCount(CARD_TABLE_ID_END) == 0);
+    assert(Cards_VariantPermille(726) == 50 && Cards_VariantPermille(727) == 200 && Cards_VariantPermille(1) == 0);
+    assert(Cards_VariantPermille(733) == 300);
+    assert(Cards_VariantLabel(726) && !strcmp(Cards_VariantLabel(726), "Rainbow foil"));
+    assert(Cards_VariantLabel(733) && !strcmp(Cards_VariantLabel(733), "Own alt"));
+    assert(!Cards_VariantLabel(727) && !Cards_VariantLabel(1));
+    assert(Cards_VariantLabel(732) && strlen(Cards_VariantLabel(732)) == 24);
+    /* It has the name and the words of the card it is a variant of. */
+    assert(Cards_NameText(733) && Cards_NameText(733) == Cards_NameText(725));
+    assert(Cards_DescriptionText(733) && Cards_DescriptionText(733) == Cards_DescriptionText(725));
+    assert(!Cards_NameText(726));   /* a variant of a card of the disc has the disc's */
 
     /* What the mod's author is told. */
     notes = Mods_Status(Mods_Loaded(0));
     assert(strstr(notes, "not a piece of Exodia"));
+    assert(strstr(notes, "cannot copy a variant"));   /* (the Mods window's text is cut: the last note is in the log) */
     assert(strstr(notes, "thousandths, 1 to 1000"));
     assert(strstr(notes, "needs \"variant_permille\""));
     assert(strstr(notes, "cut to 24 letters"));
@@ -247,22 +265,22 @@ int main(void)
 
     /* A roll of card 1: each variant by its chance, in order, one number each. */
     rolls(2, 500, 100);
-    assert(Cards_PickVariant(1, CARDS_USE_DROP) == 724 && rand_draws == 2);
+    assert(Cards_PickVariant(1, CARDS_USE_DROP) == 727 && rand_draws == 2);
     rolls(1, 10, 0);
-    assert(Cards_PickVariant(1, CARDS_USE_DROP) == 723 && rand_draws == 1);
+    assert(Cards_PickVariant(1, CARDS_USE_DROP) == 726 && rand_draws == 1);
     rolls(2, 50, 199);   /* 50 is not under 5%; 199 is under 20% */
-    assert(Cards_PickVariant(1, CARDS_USE_DROP) == 724 && rand_draws == 2);
+    assert(Cards_PickVariant(1, CARDS_USE_DROP) == 727 && rand_draws == 2);
     rolls(2, 999, 999);
     assert(Cards_PickVariant(1, CARDS_USE_DROP) == 1 && rand_draws == 2);
     /* The CPU's deals: card 1's variants did not ask, so no number is drawn. */
     rolls(2, 0, 0);
     assert(Cards_PickVariant(1, CARDS_USE_OPPONENT) == 1 && rand_draws == 0);
     rolls(1, 999, 0);
-    assert(Cards_PickVariant(5, CARDS_USE_OPPONENT) == 729 && rand_draws == 1);
+    assert(Cards_PickVariant(5, CARDS_USE_OPPONENT) == 731 && rand_draws == 1);
     rolls(1, 999, 0);
-    assert(Cards_PickVariant(5, CARDS_USE_DROP) == 729 && rand_draws == 1);
+    assert(Cards_PickVariant(5, CARDS_USE_DROP) == 731 && rand_draws == 1);
     rolls(1, 5, 0);
-    assert(Cards_PickVariant(7, CARDS_USE_DROP) == 731);
+    assert(Cards_PickVariant(7, CARDS_USE_DROP) == 732);
     rolls(1, 10, 0);
     assert(Cards_PickVariant(7, CARDS_USE_DROP) == 7);
 
@@ -271,56 +289,77 @@ int main(void)
     rolls(1, 0, 0);
     assert(Cards_PickVariant(8, CARDS_USE_DROP) == 8 && rand_draws == 0);
     rolls(1, 1, 0);
-    assert(Cards_PickVariant(2, CARDS_USE_DROP) == 725 && rand_draws == 1);
+    assert(Cards_PickVariant(2, CARDS_USE_DROP) == 723 && rand_draws == 1);
     rolls(1, 0, 0);
     assert(Cards_PickVariant(2, CARDS_USE_DROP) == 2 && rand_draws == 1);
-    /* A copy is never rolled as a base: ids past the disc's come back. */
+    /* A copy that is no variant is never rolled as a base: its id comes back. */
     rolls(1, 0, 0);
     assert(Cards_PickVariant(723, CARDS_USE_DROP) == 723 && rand_draws == 0);
+    /* A card a mod added is rolled for its variants, each by its chance, as a card of the disc is. */
+    rolls(1, 299, 0);
+    assert(Cards_PickVariant(725, CARDS_USE_DROP) == 733 && rand_draws == 1);
+    rolls(1, 300, 0);
+    assert(Cards_PickVariant(725, CARDS_USE_DROP) == 725 && rand_draws == 1);
+    rolls(1, 0, 0);   /* the CPU's deals: this variant did not ask */
+    assert(Cards_PickVariant(725, CARDS_USE_OPPONENT) == 725 && rand_draws == 0);
+    /* And an id past the mods' cards, or a variant, is not one. */
+    rolls(1, 0, 0);
+    assert(Cards_PickVariant(gCard_nCount + 1, CARDS_USE_DROP) == gCard_nCount + 1 && rand_draws == 0);
+    assert(Cards_PickVariant(733, CARDS_USE_DROP) == 733 && rand_draws == 0);
 
     /* A deck holds the limit of a card and its variants together. */
     quantities[1] = 1;
-    quantities[723] = 2;
+    quantities[726] = 2;
     assert(Cards_FamilyCopies(quantities, 1) == 3);
-    assert(Cards_FamilyCopies(quantities, 723) == 3);
-    assert(Cards_FamilyCopies(quantities, 724) == 3);
+    assert(Cards_FamilyCopies(quantities, 726) == 3);
+    assert(Cards_FamilyCopies(quantities, 727) == 3);
     quantities[2] = 2;
-    quantities[725] = 1;
+    quantities[723] = 1;
     assert(Cards_FamilyCopies(quantities, 2) == 2);   /* an even-share copy is its own card */
     quantities[8] = 1;
     assert(Cards_FamilyCopies(quantities, 8) == 1);
+    /* A card a mod added and its variant too. */
+    quantities[725] = 1;
+    quantities[733] = 2;
+    assert(Cards_FamilyCopies(quantities, 725) == 3 && Cards_FamilyCopies(quantities, 733) == 3);
 
     /* The Library's cells (SET_LIBRARY_FOLD_VARIANTS is on unless the player turns it off): every card but the
-     * variants, in card order, so 4 of the 731 cards share a cell. */
+     * variants, in card order, so 5 of the 734 cards share a cell. */
     Cards_LibraryBegin();
     assert(Cards_LibraryFolded());
-    assert(Cards_LibraryEntryCount() == gCard_nCount - 4);
+    assert(Cards_LibraryEntryCount() == gCard_nCount - 5);
     assert(Cards_LibraryEntry(0) == 0 && Cards_LibraryEntry(1) == 1 && Cards_LibraryEntry(722) == 722);
-    assert(Cards_LibraryEntry(723) == 725 && Cards_LibraryEntry(724) == 726);   /* 723 and 724 share card 1's cell */
-    assert(Cards_LibraryEntry(727) == 730 && Cards_LibraryEntry(728) == 0);     /* 729 and 731 share 5's and 7's */
+    /* The cards of the mod follow the disc's: no cell is empty, and the variants' ids (last) leave none. */
+    assert(Cards_LibraryEntry(723) == 723 && Cards_LibraryEntry(724) == 724 && Cards_LibraryEntry(725) == 725);
+    assert(Cards_LibraryEntry(726) == 728 && Cards_LibraryEntry(727) == 729 && Cards_LibraryEntry(728) == 730);
+    assert(Cards_LibraryEntry(729) == 734 && Cards_LibraryEntry(730) == 0);   /* the variants share their cards' cells */
     assert(Cards_LibraryEntry(-1) == 0 && Cards_LibraryEntry(9999) == 0);
     /* The entry is seen once any of its cards is; its cards shown are the card, then each variant seen. */
     assert(!Cards_LibraryFamilySeen(1) && Cards_LibraryFamilySize(1) == 1);
     assert(Cards_LibraryFamilyMember(1, 0) == 1 && Cards_LibraryFamilyMember(1, 1) == 0);
-    Cards_MarkSeen(724);
+    Cards_MarkSeen(727);
     assert(Cards_LibraryFamilySeen(1) && Cards_LibraryFamilySeen(5) == 0);
-    assert(Cards_LibraryFamilySize(1) == 2 && Cards_LibraryFamilyMember(1, 1) == 724);
-    Cards_MarkSeen(723);
-    assert(Cards_LibraryFamilySize(1) == 3 && Cards_LibraryFamilyMember(1, 1) == 723 &&
-           Cards_LibraryFamilyMember(1, 2) == 724 && Cards_LibraryFamilyMember(1, 3) == 0);
+    assert(Cards_LibraryFamilySize(1) == 2 && Cards_LibraryFamilyMember(1, 1) == 727);
+    Cards_MarkSeen(726);
+    assert(Cards_LibraryFamilySize(1) == 3 && Cards_LibraryFamilyMember(1, 1) == 726 &&
+           Cards_LibraryFamilyMember(1, 2) == 727 && Cards_LibraryFamilyMember(1, 3) == 0);
     assert(Cards_LibraryFamilySize(2) == 1);   /* a card with no variants is its own entry */
+    /* An entry of a card a mod added: its variant is seen, then shown, as a card of the disc's. */
+    assert(!Cards_LibraryFamilySeen(725) && Cards_LibraryFamilySize(725) == 1);
+    Cards_MarkSeen(733);
+    assert(Cards_LibraryFamilySeen(725) && Cards_LibraryFamilySize(725) == 2 && Cards_LibraryFamilyMember(725, 1) == 733);
     /* The line about the variants: made for the card on show, as the text of its own string. */
-    Cards_LibraryVariantNote(724, 1);
+    Cards_LibraryVariantNote(727, 1);
     assert(Cards_Text(LIBRARY_VARIANT_TEXT_ID, NULL));   /* (the glyphs of the line are the game's: not checked here) */
     assert(!Cards_Text(0x10, NULL));
     /* Turned off: every card has a cell of its own, as before there were variants. */
     Settings_Set(SET_LIBRARY_FOLD_VARIANTS, 0);
     Cards_LibraryBegin();
     assert(!Cards_LibraryFolded() && Cards_LibraryEntryCount() == gCard_nCount);
-    assert(Cards_LibraryEntry(731) == 731 && Cards_LibraryEntry(732) == 0 && Cards_LibraryFamilySize(1) == 1);
+    assert(Cards_LibraryEntry(734) == 734 && Cards_LibraryEntry(735) == 0 && Cards_LibraryFamilySize(1) == 1);
     Settings_Set(SET_LIBRARY_FOLD_VARIANTS, 1);
     Cards_LibraryBegin();
-    assert(Cards_LibraryEntryCount() == gCard_nCount - 4);
+    assert(Cards_LibraryEntryCount() == gCard_nCount - 5);
 
     printf("card variants: ok\n");
     return 0;

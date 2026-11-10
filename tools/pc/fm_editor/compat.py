@@ -19,7 +19,7 @@ from pathlib import Path
 from .gamedata import FRAME_COLOR_NAMES, TYPE_MAGIC
 from .model import type_named
 
-HOST_API = 26
+HOST_API = 28
 
 # The release each mod API first shipped in, for the hints. An API past the
 # last listed is newer than every release.
@@ -256,6 +256,11 @@ def features(manifest: dict, project=None) -> list:
     for entry in _entries(manifest.get("cards")):
         if "variant_permille" in entry or "variant_label" in entry:
             add(26, "a card that is a variant of another (\"variant_permille\")")
+    # --- API 28 ---------------------------------------------------------------
+    for entry in _entries(manifest.get("cards")):
+        copy = entry.get("copy")
+        if "variant_permille" in entry and isinstance(copy, str) and ":" in copy:
+            add(28, "a variant of a card a mod added (\"copy\" is its identity)")
     return out
 
 

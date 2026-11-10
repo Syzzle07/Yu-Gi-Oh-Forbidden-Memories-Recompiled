@@ -552,7 +552,7 @@ s32 Duel_SelectCardDrop(s32 pool_index)
             for (i = 1; i <= gCard_nCount; i++) {
                 sum += edited[i];
                 if (sum >= threshold)
-                    return i <= CARD_COUNT ? Cards_PickVariant(i, CARDS_USE_DROP) : i;
+                    return Cards_PickVariant(i, CARDS_USE_DROP);
             }
             return 0;
         }

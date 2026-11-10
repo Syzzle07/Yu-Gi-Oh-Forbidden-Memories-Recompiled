@@ -527,11 +527,14 @@ The notes are known once the card tables are built, before the title screen.
 
 ## Variants: alternate versions of a card
 
-A copy of a retail card that has `variant_permille` is an **alternate version**
+A copy of a card that has `variant_permille` is an **alternate version**
 of it, as a card of the trading card game comes with another picture or
 frame: it has the base's name, stats, effect, fusions and model unless its
 entry says otherwise, and a picture (`art`) and frame (`frame_style`) of its
-own.
+own. The base is a card of the disc, or a card another entry added: its `copy`
+then is that card's identity, `"mod-id:key"` (the entry's first card, or
+`"mod-id:key:n"` for the n-th of its `count`), and the variant has that
+card's name, description, pictures and name plate too, unless it gives its own.
 
 ```json
 { "copy": "Blue-eyes White Dragon", "id": "bewd-rainbow",
@@ -550,10 +553,17 @@ own.
 * **The deck limit.** A deck holds three (or the mods' `deck_copies`) of a card
   and its variants **together**: Build Deck refuses a card when its family is
   full, and the list's red count marks every member of a full family.
-* Only a retail card that is not a piece of Exodia can have variants (copies
-  of added cards cannot). A chance outside 1 to 1000, a `variant_label` with no
-  `variant_permille`, and the keys on a `replace` entry are noted in the Mods
+* A variant's base is a card of the disc that is not a piece of Exodia, or a
+  card another entry added; it is never another variant. A chance outside 1 to
+  1000, a `variant_label` with no `variant_permille`, a base that is not a card
+  or is a variant, and the keys on a `replace` entry are noted in the Mods
   window and the card is an ordinary copy.
+* **Their ids.** The variants of every mod are made after every other card, in
+  the mods' order, so that the cards the mods add follow the disc's without a
+  gap. A card's id is not kept (a save and a pack find a card by name or
+  identity), so this changes nothing a mod writes. A variant can then be of
+  any card another entry added, whichever mod it is in, and wherever in its
+  file.
 * **The Library** shows a card and its variants as one entry (View > Library:
   variants in one entry, on unless the player turns it off, [pc-build.md](pc-build.md#library-variants-in-one-entry)).
   The card's view steps through the entry with L3 and R3 (L1 and R1 turn the list's pages): the card itself,

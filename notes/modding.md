@@ -179,6 +179,7 @@ checked as well, when it starts.
 | 23 | the release after v0.3.0 | a `menu`'s `slide`; for a code mod, the mouse, the overlay's pictures and `clip` (`api` 23, [below](#code-mods)) |
 | 25 | the release after v0.3.0 | a frame style's `atk_label` or `dfd_label` picture on a style that keeps retail's frame (no `image`, or `"full_bleed": false`): it replaces retail's own "ATK"/"DFD" caption; a `digits` strip on such a style, in place of retail's digits ([Frame styles](#frame-styles-and-the-rules-that-pick-them)) |
 | 26 | the release after v0.3.0 | a card's `variant_permille` and `variant_label`: alternate versions of a retail card ([Variants](more-cards.md#variants-alternate-versions-of-a-card)) |
+| 28 | the release after v0.3.0 | a variant of a card another entry added: its `copy` is that card's identity, `"mod-id:key"` ([Variants](more-cards.md#variants-alternate-versions-of-a-card)) |
 
 The FM Editor writes `min_api` on save as the lowest one of these that has
 everything the mod uses, never lowering one written higher, and its Mod
