@@ -307,6 +307,17 @@ class FeatureTest(unittest.TestCase):
         self.assertEqual(self.needs({"cards": [{"copy": 1, "id": "a", "art_transparent": True}]}), 27)
         self.assertEqual(self.needs({"card_layout": {"frame_styles": {"a": {"stars": {"width": 9}}}}}), 18)
 
+    def test_api_28_variant_of_a_mod_card(self):
+        """A variant's "copy" naming a card a mod added by its identity (notes/more-cards.md, "Variants"): a game of
+        API 26 notes that a variant must copy a retail card and makes an ordinary copy, or none."""
+        for copy in ("mod-id:key", "mod-id:key:2"):
+            with self.subTest(copy=copy):
+                self.assertEqual(self.needs({"cards": [{"copy": copy, "id": "a", "variant_permille": 50}]}), 28)
+        # A retail card, by name or number, is API 26's as before; no chance is no variant.
+        self.assertEqual(self.needs({"cards": [{"copy": "Dark Magician", "id": "a", "variant_permille": 50}]}), 26)
+        self.assertEqual(self.needs({"cards": [{"copy": 35, "id": "a", "variant_permille": 50}]}), 26)
+        self.assertEqual(self.needs({"cards": [{"copy": "mod-id:key", "id": "a"}]}), 0)
+
     def test_reasons_are_the_highest_apis(self):
         api, reasons = compat.required({"card_text_colors": {}, "ui": {}, "limits": {"swords_turns": 5}})
         self.assertEqual(api, 11)

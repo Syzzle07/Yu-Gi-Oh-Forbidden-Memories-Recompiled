@@ -954,7 +954,7 @@ void func_8002BFCC(void) {
     if (Cards_LibraryFolded()) {
         s32 head, i, seen = 0;
 
-        for (head = CARD_ID_FIRST; head <= CARD_COUNT; head++) {
+        for (head = CARD_ID_FIRST; head <= CARD_COUNT_LIVE; head++) {
             for (i = 0; i < Cards_VariantCount(head); i++) {
                 s32 variant = Cards_VariantMember(head, i);
                 u8 member = *(u8 *)(r + variant * 4 + 0x56);

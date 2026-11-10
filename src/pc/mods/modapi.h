@@ -86,6 +86,8 @@
  *      (manifest only; no host layout or event change)
  *      only; no host layout or event change
  *  27  text_capture, text_key: the keys typed, for a mod that has the player type
+ *  28  a variant of a card a mod added: a variant's "copy" is that card's identity, "mod-id:key"
+ *      (notes/more-cards.md); manifest only; no host layout or event change
  * A data mod declares its required version with min_api in mod.json. */
 #include "mod_types.h"
 

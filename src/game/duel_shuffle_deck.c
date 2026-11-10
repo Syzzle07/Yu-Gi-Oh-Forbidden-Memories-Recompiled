@@ -34,7 +34,7 @@ static void Duel_DealEditedDeck(const u16 *pool, u8 *out16, u8 *out8)
             continue;
         }
         held[i]++;
-        *(s16 *)out16 = i <= CARD_COUNT ? Cards_PickVariant(i, CARDS_USE_OPPONENT) : i;
+        *(s16 *)out16 = Cards_PickVariant(i, CARDS_USE_OPPONENT);
         *out8 = n;
         n++;
         out16 += 2;
