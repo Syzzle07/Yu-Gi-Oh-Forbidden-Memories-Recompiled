@@ -563,7 +563,10 @@ card's name, description, pictures and name plate too, unless it gives its own.
 * **Their ids.** The variants of every mod are made after every other card, in
   the mods' order, so that the cards the mods add follow the disc's without a
   gap. A card's id is not kept (a save and a pack find a card by name or
-  identity), so this changes nothing a mod writes. A variant can then be of
+  identity), so this changes nothing a mod writes. A variant is its card with
+  another look, so Build Deck's row shows the card's number for it (035 for the
+  Dark Magician and for each alternate version; the Library's footer is the
+  entry's too), whatever its own id is. A variant can then be of
   any card another entry added, whichever mod it is in, and wherever in its
   file.
 * **The Library** shows a card and its variants as one entry (View > Library:
