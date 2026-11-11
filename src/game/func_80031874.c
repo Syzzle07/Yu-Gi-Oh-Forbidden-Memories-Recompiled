@@ -50,7 +50,7 @@ void func_80031874(DisplayObject *obj, GsOT *ot)
     s32 n;
     u32 attr;
 #ifdef MEMORIES_PC
-    s32 head, atk, def, folded;
+    s32 head, atk, def, folded, number;
 #endif
 
     x0 = (s16)obj->field_30.h.field_30;
@@ -125,15 +125,18 @@ void func_80031874(DisplayObject *obj, GsOT *ot)
                     def = ((stats >> 9) & 0x1FF) * 10;
                 }
             }
+            /* A variant is its card with another look, so the number is its card's: 035 for the Dark Magician and
+               for each of its alternate versions (cards.h, Cards_VariantOf). */
+            number = Cards_VariantOf(id) != 0 ? Cards_VariantOf(id) : id;
             /* The PC port's ids reach past 999 (card_constants.h): those
                are drawn with narrower steps, in the same 24 pixels. */
-            if (id >= 1000) {
-                s32 digits = id >= 10000 ? 5 : 4;
+            if (number >= 1000) {
+                s32 digits = number >= 10000 ? 5 : 4;
                 s32 step = digits == 5 ? 5 : 6;
                 s32 at = sprite->x;
                 s32 d;
 
-                Text_EncodeDecimalNoPadding(id, digits, text);
+                Text_EncodeDecimalNoPadding(number, digits, text);
                 sprite->v = 0x70;
                 for (d = digits - 1; d >= 0; d--) {
                     if (text[d] < 0xA) {
@@ -144,7 +147,7 @@ void func_80031874(DisplayObject *obj, GsOT *ot)
                 }
                 sprite->x = at + 3 * 8;
             } else {
-                Text_EncodeDecimalNoPadding(id, 3, text);
+                Text_EncodeDecimalNoPadding(number, 3, text);
                 func_800316F0(sprite, ot, text, 3);
             }
 #else
