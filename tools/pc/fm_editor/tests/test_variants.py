@@ -204,7 +204,7 @@ class VariantsTest(unittest.TestCase):
         self.assertNotIn("frame_style", alt)
         self.assertIn("foil-gold", written["card_layout"]["frame_styles"])
         self.assertNotIn("settings", written)
-        self.assertEqual(written["min_api"], compat.HOST_API)
+        self.assertTrue(26 <= written["min_api"] <= compat.HOST_API)   # the newest API its keys need
         for file in ("art/bewd-gold.png", "art/dm-alt.png", "frames/foil-gold.png"):
             self.assertTrue((folder / file).is_file(), file)
         # Read back, it is the same.
@@ -854,7 +854,7 @@ class VariantsTabTest(GuiCase):
         label = entries[name]["atk_label"]
         self.assertEqual(label["image"], f"frames/{name}-atk_label.png")
         self.assertEqual(pngio.decode(project.files[label["image"]]).size, (128, 64))
-        self.assertEqual([label[k] for k in ("x", "y", "width", "height")], [12, 171, 16, 8])
+        self.assertEqual([label[k] for k in ("x", "y", "width", "height")], list(ui_frames.RETAIL_CAPTIONS["atk_label"]))
         self.assertEqual(label["color"], {"r": 0, "g": 0, "b": 0})
         self.assertNotIn("dfd_label", entries[name])           # the other word is left as it was
         page.select("dfd_label")

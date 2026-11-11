@@ -666,8 +666,9 @@ class FramesPage(ttk.Frame):
 
     def defaults(self, key):
         """(x, y, width, height) of `key` when the style leaves it out: the game's on a card that keeps its frame."""
-        if key in GAME_FRAME_DEFAULTS and self.keeps_game_frame():
-            return GAME_FRAME_DEFAULTS[key]
+        if self.locked is not None and key in GAME_FRAME_DEFAULTS:
+            from . import variants
+            if variants.has_game_frame(self.project, self.style_name.get()): return GAME_FRAME_DEFAULTS[key]
         return SPECS[key][3]
 
 
@@ -1209,6 +1210,8 @@ class FramesPage(ttk.Frame):
         data = {"digits": text_presets.digits(), "atk_label": text_presets.label(False),
                 "dfd_label": text_presets.label(True)}[target]
         name = f"{FRAME_IMAGE_DIR}/{self.style_name.get()}-{target}.png"
+        # A word's place is where the preview shows it now, before its picture is there: the game's own caption's.
+        place = self.rect(target) if target.endswith("label") else None
         self.project.files[name] = data
         self.set_asset(target, name)
         if target == "digits" and self.defaults(key) is not SPECS[key][3]:
@@ -1216,9 +1219,10 @@ class FramesPage(ttk.Frame):
             for member, value in zip(("width", "height", "step"), (6, 13, 6)): digits.setdefault(member, value)
         if target.endswith("label"):
             # A label's place is its own in the game (0, 0 and 16x8 left out): write the preview's.
-            x, y, w, h = self.rect(target)
+            x, y, w, h = place
             part = self.part(target, True)
-            for member, value in (("x", x), ("y", y), ("width", w), ("height", h)): part.setdefault(member, value)
+            # (set_asset gave it the editor's start places: the game's own caption's place is where it goes.)
+            for member, value in (("x", x), ("y", y), ("width", w), ("height", h)): part[member] = value
 
     def reset(self):
         key = self.chosen; path = SPECS[key][2]
@@ -1227,12 +1231,6 @@ class FramesPage(ttk.Frame):
         if key in DIRECT_ASSETS: self.style().pop(path[0], None)
         else:
             self.part(key).clear()
-            if self.locked is not None:
-                # On the game's own frame the game's name, words and numbers are the parts given as it has them
-                # (left out, a full bleed draws no name or words and puts the numbers elsewhere).
-                from . import variants
-                if variants.has_game_frame(self.project, self.style_name.get()) and key in variants.GAME_FRAME_PARTS:
-                    variants.game_frame_part(self.project, self.style_name.get(), key)
         self.done()
 
     def new_style(self):
