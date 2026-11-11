@@ -2756,11 +2756,11 @@ int Cards_FamilyCopies(const unsigned char *quantities, int id)
     copies = quantities[base];
     for (i = 0; i < count; i++) copies += quantities[Cards_VariantMember(base, i)];
     return copies;
+}
+
 int Cards_Finish(int id)
 {
     return Cards_Valid(id) ? card_finishes[id] : 0;
-}
-
 }
 
 int Cards_PickVariant(int id, int use)
