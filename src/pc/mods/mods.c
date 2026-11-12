@@ -1258,7 +1258,8 @@ static void overlay_to_sink(void (*draw)(MenuCanvas *, int, int, const char *, u
             const TextStamp *stamp = stamp_for(drawn.chars + call->text, call->rgb, call->w, draw, width);
             if (stamp)
                 overlay_sink->image(call->clip, stamp->pixels, stamp->width, stamp->height, stamp->hash,
-                                    call->x - 4 * call->w, call->y - 14 * call->w, stamp->width, stamp->height,
+                                    call->x - 4 * box_scale(call->w), call->y - 14 * box_scale(call->w), stamp->width,
+                                    stamp->height,
                                     call->alpha);
         }
     }
