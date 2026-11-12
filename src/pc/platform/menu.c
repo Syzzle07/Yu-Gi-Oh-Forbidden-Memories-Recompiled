@@ -860,6 +860,39 @@ void Menu_DrawTextScaled(MenuCanvas *into, int x, int middle, const char *text, 
     }
 }
 
+/* The text as a picture: `px` pixels (4 to 512, as MENU_TEXT_PX), white on transparent, straight alpha, a margin of a
+ * few pixels all round for what a glyph reaches past its box. *pixels is malloc'ed (Menu_TextBitmapFree); *middle_row
+ * is the row of the line's vertical middle (what Menu_DrawTextScaled's `middle` is). For a mod that makes pictures of its own (bank sprites) of text at any size. */
+int Menu_TextBitmap(const char *text, int px, uint32_t **pixels, int *width, int *height, int *middle_row)
+{
+    MenuCanvas into;
+    const int ascent = (font_loaded ? font_ascent : 10) * px / (font_loaded ? FONT_PX : 13);
+    const int descent = (font_loaded ? font_descent : 3) * px / (font_loaded ? FONT_PX : 13);
+    int pad, w, h, middle;
+    if (!text || !pixels || px < 4 || px > 512) return 0;
+    pad = px / 4 + 2;
+    w = Menu_TextWidthScaled(text, MENU_TEXT_PX(px)) + 2 * pad;
+    h = ascent + descent + 2 * pad;
+    if (w < 1 || h < 1 || w > 8192 || !(into.pixels = calloc((size_t)w * (size_t)h, sizeof(uint32_t)))) return 0;
+    into.stride = w;
+    into.width = w;
+    into.height = h;
+    into.alpha = 1;
+    /* Menu_DrawTextScaled puts the baseline at middle + (ascent - descent + 1) / 2 of the size's own. */
+    middle = pad + ascent - (ascent - descent + 1) / 2;
+    Menu_DrawTextScaled(&into, pad, middle, text, 0xFFFFFFu, MENU_TEXT_PX(px));
+    *pixels = into.pixels;
+    if (width) *width = w;
+    if (height) *height = h;
+    if (middle_row) *middle_row = middle;
+    return 1;
+}
+
+void Menu_TextBitmapFree(uint32_t *pixels)
+{
+    free(pixels);
+}
+
 void Menu_LoadSettingsWithoutMods(void)
 {
     Paths_MigrateLegacySaves(); /* what older builds left in ./saves */
