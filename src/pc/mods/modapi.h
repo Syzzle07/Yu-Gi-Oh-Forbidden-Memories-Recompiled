@@ -90,6 +90,7 @@
  *      (notes/more-cards.md); manifest only; no host layout or event change
  *  29  a card's "finish": a foil shimmer over the card (notes/more-cards.md);
  *      manifest only; no host layout or event change
+ *  30  draw_text_px, text_width_px: overlay text at any size in pixels
  * A data mod declares its required version with min_api in mod.json. */
 #include "mod_types.h"
 
@@ -436,6 +437,20 @@ struct MemoriesModHost {
      * (an accent, a kana) are left out. */
     void (*text_capture)(const MemoriesModHost *, int on);
     int (*text_key)(const MemoriesModHost *);
+    /* --- API 30 ---
+     * Overlay text at any size. draw_text and text_width take a whole-number
+     * `scale` (13 canvas pixels times it, so only 13, 26, 39...); these take
+     * the size itself, in canvas pixels, of the same font: `px` is the em
+     * size the menu's own text has 13 of at its smallest, and 4 to 512 is
+     * honoured (anything else is held to it). draw_text_px draws as
+     * draw_text_alpha does (x, the vertical middle of the line, an 0xRRGGBB
+     * color, `alpha` 0 to 255; only in the overlay callback); text_width_px
+     * is the width the text takes. Both work with clip, and the glyphs are
+     * drawn at their own size, not magnified, so a size is as sharp as the
+     * font is at it. */
+    void (*draw_text_px)(const MemoriesModHost *, int x, int middle, const char *text, uint32_t rgb, int px,
+                         unsigned alpha);
+    int (*text_width_px)(const MemoriesModHost *, const char *text, int px);
 };
 
 #define MEMORIES_KEY_BACKSPACE 8
