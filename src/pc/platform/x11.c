@@ -861,9 +861,6 @@ void Platform_SetStateSlot(int slot)
 
 void Platform_PumpEvents(void) { if (display) pump(); }
 
-/* No window size to fit the internal resolution to on this backend (platform.h). */
-int Platform_DisplayHeight(void) { return 0; }
-
 /* No mouse for the overlay menus on this backend (platform.h). */
 int Platform_WindowPointer(int *x, int *y, unsigned *buttons)
 {

@@ -250,7 +250,7 @@ static void draw_piece(const GsSPRITE *sprite, int mode, int du, int dv, int w, 
 
 static int internal_scale(void)
 {
-    int scale = SoftGpu_Scale(); /* the one in use (Auto and the CPU picture's are not the setting) */
+    int scale = Settings_Get(SET_INTERNAL_SCALE);
     return scale > 1 ? scale : 1;
 }
 

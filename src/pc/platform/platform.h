@@ -185,9 +185,6 @@ int Platform_PadConnected(int port);
  * is a touch's, on the menu bar, or a menu, a notice or a panel has it, or a
  * mod has captured it. Main thread. See overlay_pointer.h. */
 int Platform_WindowPointer(int *x, int *y, unsigned *buttons);
-/* How many device pixels tall the display area is shown (the window's picture, its menu bar left out), 0 when there is
- * no window to say. Internal resolution Auto fits the picture to it. */
-int Platform_DisplayHeight(void);
 /* The part of Platform_Pad(port) the player's own keys and controllers did
  * not press: scripted input and, on port 0, the mouse. Game > Japanese
  * buttons leaves these alone (button_layout.h). Async-signal-safe. */

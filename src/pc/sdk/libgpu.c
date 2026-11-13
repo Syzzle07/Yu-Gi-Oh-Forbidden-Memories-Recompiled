@@ -296,15 +296,13 @@ static void present_wide(int w, int h)
  * inside the present, and a View menu change made there would free the
  * pictures and widescreen targets the present is still reading. */
 static int presenting, scale_after_present;
-/* Internal Auto (0): the scale is chosen from the size the picture is shown at, by auto_scale_step each shown frame. */
-static int scale_auto;
 
-static int apply_scale(int wanted)
+int Memories_SetInternalScale(int wanted)
 {
     sigset_t held, previous;
     int done;
-    /* 1 to 8: any of them with the OpenGL picture; the CPU picture only keeps 1, 2, 4 and 8 (SoftGpu_SetScale). */
-    wanted = wanted < 1 ? 1 : wanted > 8 ? 8 : wanted;
+    /* 1, 2, 4 or 8: the setting's 3 is 2, 5 to 7 are 4. */
+    wanted = wanted >= 8 ? 8 : wanted >= 4 ? 4 : wanted >= 2 ? 2 : 1;
     if (presenting) { /* after this frame (Memories_PresentDisplay) */
         scale_after_present = wanted;
         return 1;
@@ -317,51 +315,6 @@ static int apply_scale(int wanted)
     done = SoftGpu_SetScale(wanted);
     sigprocmask(SIG_SETMASK, &previous, NULL);
     return done;
-}
-
-int Memories_SetInternalScale(int wanted)
-{
-    scale_auto = wanted <= 0;
-    if (scale_auto) {
-        scale_after_present = 0; /* a fixed scale asked for and not yet made is no longer wanted */
-        return 1;
-    }
-    return apply_scale(wanted);
-}
-
-/* Auto: the smallest whole scale whose picture has a line for every pixel the display area is shown at (the console's
- * 240 lines each way), so the window is filled from a picture that is scaled down, never up (the present step's
- * filter does that). A window being dragged does not rebuild the picture at every size: a scale has to be wanted for
- * a few shown frames in a row first. */
-#define AUTO_SCALE_FRAMES 20
-#ifdef __ANDROID__
-#define AUTO_SCALE_MAX 4 /* the OpenGL ES picture goes no higher (gl_picture.c) */
-#else
-#define AUTO_SCALE_MAX 8
-#endif
-
-static void auto_scale_step(void)
-{
-    static int pending, stable;
-    int pixels = Platform_DisplayHeight(), target;
-    if (pixels <= 0) return; /* no window to fit: the scale stays as it is */
-    target = (pixels + 239) / 240;
-    if (target > AUTO_SCALE_MAX) target = AUTO_SCALE_MAX;
-    if (target < 1) target = 1;
-    if (target == SoftGpu_Scale()) {
-        pending = target;
-        stable = 0;
-        return;
-    }
-    if (target != pending) {
-        pending = target;
-        stable = 0;
-        return;
-    }
-    if (++stable >= AUTO_SCALE_FRAMES) {
-        stable = 0;
-        apply_scale(target);
-    }
 }
 
 /* MEMORIES_FRAME_HASHES=<file>: one line per presented frame, the frame
@@ -494,10 +447,9 @@ void Memories_PresentDisplay(void)
         }
         presenting = 0;
         if (scale_after_present) {
-            apply_scale(scale_after_present);
+            Memories_SetInternalScale(scale_after_present);
             scale_after_present = 0;
         }
-        if (scale_auto) auto_scale_step();
     } else {
         Platform_PumpEvents(); /* input and the menu keep up on frames that are not shown */
     }

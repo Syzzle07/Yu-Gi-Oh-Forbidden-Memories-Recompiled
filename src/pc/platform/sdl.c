@@ -2928,12 +2928,6 @@ static int pointer_read(int *x, int *y, unsigned *buttons)
     return 1;
 }
 
-int Platform_DisplayHeight(void)
-{
-    const float pixels = layout.dst.h * layout.pixel_y;
-    return window && pixels >= 1.0f ? (int)(pixels + 0.5f) : 0;
-}
-
 int Platform_WindowPointer(int *x, int *y, unsigned *buttons)
 {
     if (!window || !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) || !pointer_inside || !pointer_is_mouse ||
