@@ -24,7 +24,10 @@ void Memories_DumpFrame(const char *path, int full_vram);
 /* FNV-1a of all of VRAM, the hash MEMORIES_FRAME_HASHES writes per frame. */
 unsigned long long Memories_VramHash(void);
 /* The internal resolution (SoftGpu_SetScale) from the main thread while
- * the game runs; 3 and 5 to 7 round down to 2 and 4. */
+ * the game runs: 1 to 8 (the CPU picture, which the OpenGL one replaces, keeps
+ * to 1, 2, 4 and 8 and takes the largest of them not above it), or 0 for Auto,
+ * which picks the smallest scale that has a line of the picture for every pixel
+ * the display area is shown at (Platform_DisplayHeight). */
 int Memories_SetInternalScale(int scale);
 /* For game code that reads part of the picture back (StoreImage) and loads
  * it elsewhere to draw with (LoadImage): after the load, so the OpenGL

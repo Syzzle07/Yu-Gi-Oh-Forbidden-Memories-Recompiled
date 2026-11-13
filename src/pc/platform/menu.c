@@ -258,7 +258,12 @@ static Menu submenus[SUB_COUNT] = {
                        {"Widescreen (16:9)", 0, ITEM_RADIO, MENU_ITEM_ASPECT_WIDESCREEN, SET_ASPECT, 2}}, 3},
     {"Resolution", {{"Console resolution", 0, ITEM_RADIO, 0, SET_INTERNAL_SCALE, 1},
                      {"Internal 2x", 0, ITEM_RADIO, 0, SET_INTERNAL_SCALE, 2},
-                     {"Internal 4x", 0, ITEM_RADIO, 0, SET_INTERNAL_SCALE, 4}}, 3},
+                     {"Internal 3x", 0, ITEM_RADIO, 0, SET_INTERNAL_SCALE, 3},
+                     {"Internal 4x", 0, ITEM_RADIO, 0, SET_INTERNAL_SCALE, 4},
+                     {"Internal 5x", 0, ITEM_RADIO, 0, SET_INTERNAL_SCALE, 5},
+                     {"Internal 6x", 0, ITEM_RADIO, 0, SET_INTERNAL_SCALE, 6},
+                     {"Internal 8x", 0, ITEM_RADIO, 0, SET_INTERNAL_SCALE, 8},
+                     {"Auto (fit the window)", 0, ITEM_RADIO, 0, SET_INTERNAL_SCALE, 0, ITEM_GROUP_BREAK}}, 8},
     /* The present pass (src/pc/render/present_pass.c); 100 is the picture as is. */
     {"Color", {{"Brightness", 0, ITEM_SLIDER, 0, SET_BRIGHTNESS},
                {"Contrast", 0, ITEM_SLIDER, 0, SET_CONTRAST},
@@ -1028,7 +1033,7 @@ static void update_effect_items(int console, const char *no_picture)
 static void update_hd_items(void)
 {
     static const int ids[] = {MENU_ITEM_HD_TEXT, MENU_ITEM_OPPONENT_NAME, MENU_ITEM_PGXP, MENU_ITEM_HD_FAST};
-    int console = Settings_Get(SET_INTERNAL_SCALE) < 2;
+    int console = Settings_Get(SET_INTERNAL_SCALE) == 1; /* (0 is Auto, which is 2x or more for any window) */
 #ifdef __ANDROID__ /* the system's GL is GLES (sdl.c, es_wanted) */
     const char *hd_why = !hd_picture ? "needs OpenGL ES 3" : console ? "needs Internal 2x" : NULL;
     const char *name_why = !hd_picture && !console ? "needs OpenGL ES 3 or 1x" : NULL;

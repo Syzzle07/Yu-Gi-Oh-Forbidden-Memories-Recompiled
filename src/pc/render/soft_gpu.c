@@ -65,7 +65,10 @@ static unsigned wide_clock;
 /* The scaled picture (SoftGpu_SetScale): scale x scale pixels per word. */
 static uint32_t *picture;
 static uint32_t *wide_picture; /* only the widened primitive pass writes here */
-static int scale = 1, scale_shift; /* scale is 1, 2, 4 or 8: the picture wraps with masks and divides with shifts */
+/* scale is 1 to 8 with the OpenGL recorder (it draws the picture). The CPU picture wraps with masks and divides with
+ * shifts, so it is only ever 1, 2, 4 or 8: SoftGpu_SetScale makes it the largest of those that is not above what was
+ * asked, which `scale_requested` keeps for the recorder to take up (and for the CPU picture to go back to). */
+static int scale = 1, scale_shift, scale_requested = 1;
 static const SoftGpuRecorder *recorder; /* draws the picture instead, from a record (soft_gpu.h) */
 static void wide_drop(void);
 /* Whether the widescreen targets get the primitives (see above). */
@@ -186,7 +189,9 @@ int SoftGpu_SetScale(int wanted)
 {
     uint32_t *made = NULL;
     int rastered;
-    if (wanted != 1 && wanted != 2 && wanted != 4 && wanted != 8) return 0;
+    if (wanted < 1 || wanted > 8) return 0;
+    scale_requested = wanted;
+    if (!recorder) wanted = wanted >= 8 ? 8 : wanted >= 4 ? 4 : wanted >= 2 ? 2 : 1;
     if (wanted == scale) return 1;
     rastered = wide_rastered();
     if (wanted > 1 && !recorder) {
@@ -200,7 +205,7 @@ int SoftGpu_SetScale(int wanted)
     free(picture);
     picture = made;
     scale = wanted;
-    scale_shift = wanted == 8 ? 3 : wanted == 4 ? 2 : wanted == 2 ? 1 : 0;
+    scale_shift = wanted == 8 ? 3 : wanted == 4 ? 2 : wanted == 2 ? 1 : 0;   /* (only the CPU picture uses it) */
     /* The targets missed the primitives so far: made again from VRAM. */
     if (!rastered && wide_rastered()) wide_drop();
     SoftGpu_PictureFromVram();
@@ -231,12 +236,12 @@ void SoftGpu_SetRecorder(const SoftGpuRecorder *wanted)
             free(wide[t].picture);
             wide[t].picture = NULL;
         }
+        scale = scale_requested; /* any of 1 to 8: the recorder has no masks to wrap by */
         resync_recorder();
     } else if (scale > 1) {
-        int at_scale = scale;
         wide_drop(); /* they missed the primitives, as in SetScale */
         scale = 1; /* so that SetScale makes the picture again */
-        SoftGpu_SetScale(at_scale);
+        SoftGpu_SetScale(scale_requested);
     }
 }
 

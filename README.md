@@ -11,7 +11,7 @@ by hand and AI that matches the original byte for byte, then ported to PC.
 
 ## Features
 
-- Up to 4x internal resolution, widescreen and HD text
+- Internal resolution from 1x to 8x, or Auto to fit the window, widescreen and HD text
 - **3D Monsters**: face-up monsters stand on the field as their battle models
 - Optional **Forbidden Memories HD** pack: redrawn cards, frames and portraits
 - Mods: framework for new cards past the original 722, fusions, textures, music, gameplay tables
