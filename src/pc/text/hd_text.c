@@ -949,17 +949,27 @@ int HdText_TitleCard(int page_x, int page_y, int u, int v, int wanted, int *atla
 int HdText_TitleSized(int page_x, int page_y, int u, int v, int wanted, int width, int height, float *atlas_u,
                       float *atlas_v, float *step_u, float *step_v, int *title_u, int *title_v, int *card)
 {
-    int x, y;
+    int x, y, rung = 6, rung_width;
     /* A place holds the plate at the factor: nothing larger is drawn there. */
     if (wanted < 2 || wanted > MAX_FACTOR || width < 4 || height < 3 || width > CARD_TITLE_WIDTH * wanted ||
         height > CARD_TITLE_HEIGHT * wanted) {
         return 0;
     }
-    if (!title_place(page_x, page_y, u, v, wanted, width, height, &x, &y, title_u, title_v, card)) return 0;
+    /* The name is set at a rung of a ladder (a quarter taller each), the first
+     * at or above the plate's height, and drawn a little smaller than set:
+     * a card that eases its size (a hovered one) would otherwise have the
+     * name set anew every frame, and each size spaces its letters a pixel
+     * differently, so the name wobbles. The fraction the picture is shrunk by
+     * (1 to 1.25) is the shader's to average. */
+    while (rung < height) rung = rung * 5 / 4 + 1;
+    if (rung > CARD_TITLE_HEIGHT * wanted) rung = CARD_TITLE_HEIGHT * wanted;
+    rung_width = (rung * CARD_TITLE_WIDTH + CARD_TITLE_HEIGHT / 2) / CARD_TITLE_HEIGHT;
+    if (rung_width > CARD_TITLE_WIDTH * wanted) rung_width = CARD_TITLE_WIDTH * wanted;
+    if (!title_place(page_x, page_y, u, v, wanted, rung_width, rung, &x, &y, title_u, title_v, card)) return 0;
     *atlas_u = (float)x / (float)factor;
     *atlas_v = (float)y / (float)factor;
-    *step_u = (float)width / (float)CARD_TITLE_WIDTH / (float)factor;
-    *step_v = (float)height / (float)CARD_TITLE_HEIGHT / (float)factor;
+    *step_u = (float)rung_width / (float)CARD_TITLE_WIDTH / (float)factor;
+    *step_v = (float)rung / (float)CARD_TITLE_HEIGHT / (float)factor;
     return 1;
 }
 
