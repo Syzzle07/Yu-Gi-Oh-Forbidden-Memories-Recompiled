@@ -1878,6 +1878,12 @@ int HdText_HudEnabled(void)
     return HdText_Enabled();
 }
 
+int HdText_CardStat(int depth, int page_x, int page_y, int clut_x, int clut_y)
+{
+    /* The big card's ATK and DFD and its digits: the labels set up in make_labels. */
+    return !depth && page_x == 960 && page_y == 256 && clut_x == 496 && clut_y >= 248 && clut_y <= 249;
+}
+
 /* The word a label shows: a terrain label's own word unless the active
  * field has a name of its own for it (fields.h, Fields_HasCustomName). */
 static const char *field_label_text(const Label *l)
