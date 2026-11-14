@@ -1083,6 +1083,8 @@ typedef struct Vertex {
     int x, y, r, g, b, u, v;
     int precise;     /* PGXP: fx, fy and q hold where the vertex really is */
     float fx, fy, q;
+    int sized;       /* HD text drawn at the size shown: su, sv are the texel, not u, v */
+    float su, sv;
 } Vertex;
 
 /* PGXP (pc/compat/pgxp.h): the batch being read, and the precise vertices
@@ -1242,7 +1244,8 @@ static void triangle(const Vertex *a, const Vertex *b, const Vertex *c, int flag
     for (i = 0; i < 3; i++) {
         float x = v[i]->precise ? v[i]->fx * (float)scale + shift : (float)(v[i]->x * scale) + shift;
         float y = v[i]->precise ? v[i]->fy * (float)scale + shift : (float)(v[i]->y * scale) + shift;
-        set_vertex(&out[i], x, y, (float)v[i]->u, (float)v[i]->v, v[i], flags);
+        set_vertex(&out[i], x, y, v[i]->sized ? v[i]->su : (float)v[i]->u, v[i]->sized ? v[i]->sv : (float)v[i]->v,
+                   v[i], flags);
     }
 }
 
@@ -1317,6 +1320,29 @@ static void set_page(uint32_t value, int polygon)
 
 static void name_over_panel(int x, int y, int width, int height, int u0, int v0, int w, int h, const Vertex *color,
                             int flags);
+
+/* The size in device pixels of the plate a quad draws, when it is the whole
+ * plate of a card (texels 96 x 14), upright and exact: its top and left
+ * edges. 0 for any other. */
+static int plate_pixels(const Vertex *v, int *width, int *height)
+{
+    float x[3], y[3], dx1, dy1, dx2, dy2;
+    int i;
+    if (!v[0].precise || !v[1].precise || !v[2].precise || !v[3].precise) return 0;
+    if (v[1].u - v[0].u != CARD_TITLE_WIDTH - 1 || v[2].v - v[0].v != CARD_TITLE_HEIGHT - 1) return 0;
+    for (i = 0; i < 3; i++) {
+        x[i] = v[i].fx * (float)scale;
+        y[i] = v[i].fy * (float)scale;
+    }
+    dx1 = x[1] - x[0];
+    dy1 = y[1] - y[0];
+    dx2 = x[2] - x[0];
+    dy2 = y[2] - y[0];
+    if (dx1 < 4.0f || dy2 < 3.0f || dy1 > 1.0f || dy1 < -1.0f || dx2 > 1.0f || dx2 < -1.0f) return 0;
+    *width = (int)(dx1 + 0.5f);
+    *height = (int)(dy2 + 0.5f);
+    return 1;
+}
 
 static size_t polygon(const uint32_t *words, size_t count)
 {
@@ -1417,9 +1443,28 @@ static size_t polygon(const uint32_t *words, size_t count)
         }
     } else if (!(flags & 16) && textured && hd_text && state.depth == 0 && !state.bank) {
         /* A card's title plate, whole or a piece of the turning card. */
-        int atlas_u, atlas_v, title_u, title_v, title_card;
-        if (HdText_TitleCard(state.page_x, state.page_y, v[0].u, v[0].v, scale, &atlas_u, &atlas_v, &title_u, &title_v,
-                         &title_card)) {
+        int atlas_u, atlas_v, title_u, title_v, title_card, plate_w, plate_h;
+        float sized_u, sized_v, step_u, step_v;
+        if (quad && plate_pixels(v, &plate_w, &plate_h) &&
+            (plate_w < CARD_TITLE_WIDTH * scale * 0.95f || plate_h < CARD_TITLE_HEIGHT * scale * 0.95f) &&
+            HdText_TitleSized(state.page_x, state.page_y, v[0].u, v[0].v, scale, plate_w, plate_h, &sized_u, &sized_v,
+                              &step_u, &step_v, &title_u, &title_v, &title_card)) {
+            /* A plate drawn smaller than its picture: the name set at the
+             * size it shows, one atlas pixel to a pixel of the picture,
+             * where the nearest texel of the large one skipped strokes. The
+             * plate's last column and row end at the picture's edge. */
+            if (CardLayout_TitleStyled(title_card)) flags |= 128;
+            for (i = 0; i < 4; i++) {
+                int du = v[i].u - title_u + (v[i].u - title_u == CARD_TITLE_WIDTH - 1);
+                int dv = v[i].v - title_v + (v[i].v - title_v == CARD_TITLE_HEIGHT - 1);
+                v[i].sized = 1;
+                v[i].su = sized_u + (float)du * step_u;
+                v[i].sv = sized_v + (float)dv * step_v;
+            }
+            state.pack = 0;
+            flags |= 16;
+        } else if (HdText_TitleCard(state.page_x, state.page_y, v[0].u, v[0].v, scale, &atlas_u, &atlas_v, &title_u,
+                                    &title_v, &title_card)) {
             if (CardLayout_TitleStyled(title_card)) flags |= 128;
             /* Drawn at its exact place (Pgxp_CardBegin): the plate's last
              * column and row are shown too, as in the HUD's labels above. */

@@ -139,6 +139,38 @@ int main(void)
     CardArt_TitleFromName("Elfa Dançarina", plate);
     CardArt_TitleFromName("Elfa Dançarina", wide_plate);
     CHECK(!memcmp(plate, wide_plate, sizeof(plate)), "the same name set twice differs");
+    /* A plate drawn smaller than its picture (a card shown at 25-70%) is set
+     * at the size it shows: inks only inside its box, dark stems in it, a
+     * long name squeezed into it, and no write past it. */
+    {
+        static const int sizes[][2] = {{96, 14}, {48, 7}, {38, 6}, {192, 28}};
+        unsigned j;
+        for (j = 0; j < sizeof(sizes) / sizeof(*sizes); j++) {
+            const int w = sizes[j][0], h = sizes[j][1];
+            const size_t box = (size_t)w * h;
+            unsigned char *pixels = malloc(box + 64);
+            int x, y, inked = 0, dark = 0, right = -1;
+            CHECK(pixels != NULL, "out of memory");
+            memset(pixels, 0xEE, box + 64);
+            CHECK(CardArt_TitleSized("Dragão do Trovão de Duas Cabeças", w, h, pixels, w), "%dx%d: not set", w, h);
+            for (y = 0; y < h; y++) {
+                for (x = 0; x < w; x++) {
+                    int ink = pixels[(size_t)y * w + x];
+                    CHECK(ink <= 7, "%dx%d: ink %d outside 0-7", w, h, ink);
+                    if (ink) {
+                        inked++;
+                        if (x > right) right = x;
+                    }
+                    if (ink && ink <= 3) dark++;
+                }
+            }
+            CHECK(inked > (int)(box / 25) && dark > 0, "%dx%d: too little ink (%d, %d dark)", w, h, inked, dark);
+            CHECK(right >= w * 85 / 96 && right < w, "%dx%d: the long name ends at column %d", w, h, right);
+            CHECK(pixels[box] == 0xEE && pixels[box + 63] == 0xEE, "%dx%d: written past its box", w, h);
+            free(pixels);
+        }
+        CHECK(!CardArt_TitleSized("Dancing Elf", 0, 7, plate, 1), "a plate no pixels wide was set");
+    }
     if (failures) return 1;
     printf("card plates ok\n");
     return 0;

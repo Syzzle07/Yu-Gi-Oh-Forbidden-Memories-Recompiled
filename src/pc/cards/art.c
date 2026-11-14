@@ -1033,19 +1033,30 @@ void *CardArt_SerifFace(void)
 /* The name as the retail plates set theirs: Times at 13 pixels, the
  * baseline under row 11, from column 3, each glyph on a whole pixel so stems
  * fill whole columns; a name wider than 90 pixels is squeezed into columns
- * 3 to 93, as the long retail names are. At `factor` pixels per texel all of
- * that is `factor` times as big. `cover` gets each pixel's coverage, 0-255,
- * CARD_TITLE_WIDTH * factor across and CARD_TITLE_HEIGHT * factor down.
- * 0 when there is no serif font. */
-static int set_name(const char *name, int factor, unsigned char *cover)
+ * 3 to 93, as the long retail names are. `cover` gets each pixel's coverage,
+ * 0-255, `width` across and `height` down: the plate (CARD_TITLE_WIDTH x
+ * CARD_TITLE_HEIGHT texels) at that many pixels. Whole factors of it are the
+ * plate `factor` times as big; any other size is the plate as it shows when
+ * a card is drawn smaller (the font follows the height, the columns the
+ * width). 0 when there is no serif font. */
+static int set_name(const char *name, int width, int height, unsigned char *cover)
 {
-    const int wide = 512 * factor, baseline = 11 * factor, left = 3 * factor, room = 90 * factor;
-    const int width = CARD_TITLE_WIDTH * factor, height = CARD_TITLE_HEIGHT * factor, above = 8 * factor;
+    const int wide = 512 * ((height + CARD_TITLE_HEIGHT - 1) / CARD_TITLE_HEIGHT);
+    const int baseline = (11 * height + CARD_TITLE_HEIGHT / 2) / CARD_TITLE_HEIGHT;
+    const int left = (3 * width + CARD_TITLE_WIDTH / 2) / CARD_TITLE_WIDTH;
+    const int room = (90 * width + CARD_TITLE_WIDTH / 2) / CARD_TITLE_WIDTH;
+    const int above = (8 * height + CARD_TITLE_HEIGHT - 1) / CARD_TITLE_HEIGHT;
+    FT_Size_RequestRec request;
     unsigned char *line, *drawn;
     int pen = left, x, y, ink_low = wide, ink_high = -1, previous = 0, first = above;
     const char *c = name;
     CardArt_SerifFace();
-    if (!face || FT_Set_Pixel_Sizes(face, 0, 13 * factor)) return 0;
+    memset(&request, 0, sizeof(request));
+    request.type = FT_SIZE_REQUEST_TYPE_NOMINAL;
+    /* 26.6 pixels: whole at whole factors, so those come out as they did. */
+    request.height = ((FT_Long)13 * height * 64 + CARD_TITLE_HEIGHT / 2) / CARD_TITLE_HEIGHT;
+    request.width = request.height;
+    if (!face || width < 1 || height < 1 || FT_Request_Size(face, &request)) return 0;
     /* Drawn with `above` rows over the plate, for marks that reach past
      * its top (a Vietnamese capital's two). */
     drawn = calloc((size_t)(above + height) * wide, 1);
@@ -1143,7 +1154,7 @@ int CardArt_TitleFromName(const char *name, unsigned char *plate)
 {
     unsigned char cover[CARD_TITLE_WIDTH * CARD_TITLE_HEIGHT];
     int x, y;
-    if (!set_name(name, 1, cover)) return 0;
+    if (!set_name(name, CARD_TITLE_WIDTH, CARD_TITLE_HEIGHT, cover)) return 0;
     memset(plate, 0, CARD_TITLE_BYTES);
     for (y = 0; y < CARD_TITLE_HEIGHT; y++) {
         for (x = 0; x < CARD_TITLE_WIDTH; x++) put_ink(plate, x, y, ink_of(cover[y * CARD_TITLE_WIDTH + x]));
@@ -1151,25 +1162,36 @@ int CardArt_TitleFromName(const char *name, unsigned char *plate)
     return 1;
 }
 
-int CardArt_TitlePicture(const char *name, int factor, unsigned char *indices, int pitch)
+/* The plate's inks run from 1 (full, the darkest) to 7 (the faintest the
+ * retail plates use); at this size the whole run. */
+static void title_inks(const unsigned char *cover, int width, int height, unsigned char *indices, int pitch)
 {
-    const int width = CARD_TITLE_WIDTH * factor, height = CARD_TITLE_HEIGHT * factor;
-    unsigned char *cover = malloc((size_t)width * height);
     int x, y;
-    if (!cover) return 0;
-    if (!set_name(name, factor, cover)) {
-        free(cover);
-        return 0;
-    }
     for (y = 0; y < height; y++) {
         for (x = 0; x < width; x++) {
-            /* The plate's inks run from 1 (full, the darkest) to 7 (the
-             * faintest the retail plates use); at this size the whole run. */
             int c = cover[(size_t)y * width + x], ink = 0;
             if (c >= 24) ink = 7 - (int)((c >= 200 ? 176 : c - 24) * 6 / 176.0 + 0.5);
             indices[(size_t)y * pitch + x] = (unsigned char)ink;
         }
     }
+}
+
+int CardArt_TitleSized(const char *name, int width, int height, unsigned char *indices, int pitch)
+{
+    unsigned char *cover;
+    if (width < 1 || height < 1) return 0;
+    cover = malloc((size_t)width * height);
+    if (!cover) return 0;
+    if (!set_name(name, width, height, cover)) {
+        free(cover);
+        return 0;
+    }
+    title_inks(cover, width, height, indices, pitch);
     free(cover);
     return 1;
+}
+
+int CardArt_TitlePicture(const char *name, int factor, unsigned char *indices, int pitch)
+{
+    return CardArt_TitleSized(name, CARD_TITLE_WIDTH * factor, CARD_TITLE_HEIGHT * factor, indices, pitch);
 }

@@ -2816,6 +2816,19 @@ pixels are). Taking one texel instead, as it did, dropped the thin strokes
 of a card's title and tore the letters. At its own size or larger a pixel
 spans one texel and the result is as before.
 
+A card's title is set again at the size it shows instead. A plate drawn
+whole, upright and at its exact place (a card scaled flat, see `card_precise`)
+at less than 95% of its picture's size is asked for with `HdText_TitleSized`
+(the plate's width and height in pixels of the picture): `CardArt_TitleSized`
+sets the name, Times at the plate's height, in one of the atlas's title
+places, cached by card, name and size (an animation that shrinks a card draws
+a new size a frame; a place holds the plate at the factor, so nothing larger
+is drawn there). The vertices carry the texel (`Vertex.su`, `sv`: one plate
+texel steps `step_u`, `step_v` atlas texels, which are fractional), so the
+shader needs no change and a pixel of the picture is one atlas pixel. What
+cannot be read at a size is not helped: at internal 2x a plate at 25% is
+48 x 7 pixels, 2 pixels a letter.
+
 The retail font is anti-aliased in its indices, which the text palettes run
 from black up to the text's color. The dark outline is the lowest index
 (1, and 2-3 in the large font). Above it, an index is how bright the texel
