@@ -535,6 +535,7 @@ static const char *fragment_source =
     "    st += back * (1.0 - 1.0 / float(scale));\n"
     "    vec2 half_step = 0.5 * (dFdx(st) + dFdy(st));\n"
     "    float spread = max(fwidth(st.x), fwidth(st.y));\n"
+    "    vec2 st_span = fwidth(st);\n"
     "    float cover = 1.0;\n"
     "    if ((flags & 4) != 0) {\n"
     "        float ub = st.x + 1.0 / 256.0, vb = st.y + 1.0 / 256.0;\n"
@@ -583,6 +584,44 @@ static const char *fragment_source =
     "            if ((flags & 128) != 0) {\n"
     "                uint level = ink == 0u ? 0u : (8u - min(ink, 7u)) * 31u / 7u;\n"
     "                word = level | (level << 5u) | (level << 10u);\n"
+    "            }\n"
+    /* Drawn smaller than the glyph's picture is (a card shrunk, a panel scaled
+     * down), a pixel spans several of the picture's texels and the one read
+     * above is a sample that skips the rest: a thin stroke of a card's title
+     * vanishes and the letters look torn. Then the texels the pixel covers
+     * are averaged, as many as it spans each way (up to 6), through the
+     * palette, and the pixel is mixed over what is under it as much as they
+     * cover it. At its own size, or larger, a pixel spans one and nothing
+     * above changes. */
+    "            vec2 foot = st_span * float(scale);\n"
+    "            ivec2 taps = ivec2(clamp(ceil(foot - 0.05), 1.0, 6.0));\n"
+    "            if (taps.x > 1 || taps.y > 1) {\n"
+    "                vec2 pos = vec2(ub, vb) * float(scale);\n"
+    "                vec3 sum = vec3(0.0);\n"
+    "                float hit = 0.0;\n"
+    "                uint first = 0u;\n"
+    "                for (int j = 0; j < taps.y; j++) {\n"
+    "                    for (int i = 0; i < taps.x; i++) {\n"
+    "                        vec2 o = ((vec2(float(i), float(j)) + 0.5) / vec2(taps) - 0.5) * foot;\n"
+    "                        ivec2 tap = clamp(ivec2(floor(pos + o)), ivec2(0), textureSize(glyphs, 0) - 1);\n"
+    "                        uint k = texelFetch(glyphs, tap, 0).r;\n"
+    "                        uint w = word_at(page.z + int(k), page.w);\n"
+    "                        if ((flags & 128) != 0) {\n"
+    "                            uint lv = k == 0u ? 0u : (8u - min(k, 7u)) * 31u / 7u;\n"
+    "                            w = lv | (lv << 5u) | (lv << 10u);\n"
+    "                        }\n"
+    "                        if (w != 0u) {\n"
+    "                            sum += expand(w);\n"
+    "                            hit += 1.0;\n"
+    "                            if (first == 0u) first = w;\n"
+    "                        }\n"
+    "                    }\n"
+    "                }\n"
+    "                if (hit == 0.0) discard;\n"
+    "                word = first;\n"
+    "                t = sum / hit;\n"
+    "                cover = hit / float(taps.x * taps.y);\n"
+    "                replaced = true;\n"
     "            }\n"
     /* A capture (SoftGpu_Capture): a 16-bit texel there keeps its word,
      * which says whether it is transparent and semi-transparent, and takes
