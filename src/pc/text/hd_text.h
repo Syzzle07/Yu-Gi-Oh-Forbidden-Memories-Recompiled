@@ -70,6 +70,13 @@ int HdText_TitleSized(int page_x, int page_y, int u, int v, int factor, int widt
  * through the palette at clut_x, clut_y: where its texel u, v is in the
  * atlas. Returns 0 for any other sprite. */
 int HdText_HudEnabled(void);
+/* Whether the sprite on that page and palette is one of the big card's ATK,
+ * DFD or digits (the card view's, Mulligan's and any mod's). With HD text on
+ * its picture is drawn in place of a texture pack's image of the sprite, as a
+ * card's name is: the text is the port's, one look for the name, the
+ * description and the numbers, whatever pack is installed. The duel's small
+ * cards' numbers stay the pack's. */
+int HdText_CardStat(int depth, int page_x, int page_y, int clut_x, int clut_y);
 int HdText_Hud(int depth, int page_x, int page_y, int clut_x, int clut_y, int u, int v, int w, int h, int factor,
                int *atlas_u, int *atlas_v);
 /* The active field's own name over the FIELD box's terrain word (fields.h,

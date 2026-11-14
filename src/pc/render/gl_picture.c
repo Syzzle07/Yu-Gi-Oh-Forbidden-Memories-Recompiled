@@ -1436,9 +1436,11 @@ static size_t polygon(const uint32_t *words, size_t count)
         ? (scale > 1 ? TexturePack_BankEntryForRegion(state.bank, state.page_x, state.page_y, state.depth, state.clut_x,
                                                       state.clut_y, piece[4], piece[5], piece[6], piece[7]) : 0)
         : TexturePack_EntryFor(state.page_x, state.page_y, state.depth, state.clut_x, state.clut_y, v[0].u, v[0].v)) : 0;
-    if (quad && textured && hd_hud && !state.pack && !state.bank) {
+    if (quad && textured && hd_hud && !state.bank &&
+        (!state.pack || HdText_CardStat(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y))) {
         /* A digit or the panel drawn as a quad (a clip-tested field card):
-         * a texture pack's image, where one paints it, comes first. A card
+         * a texture pack's image, where one paints it, comes first (but for
+         * the big card's own numbers: HdText_CardStat). A card
          * drawn at its exact place (all four corners precise, Pgxp_CardBegin)
          * is a sprite whose texels run u0..u0+w-1 over a quad w wide: the
          * texels it shows are the whole w x h, the last column and row
@@ -1462,6 +1464,7 @@ static size_t polygon(const uint32_t *words, size_t count)
                 v[i].u = atlas_u + v[i].u - u0 + (whole && v[i].u == u1);
                 v[i].v = atlas_v + v[i].v - v0 + (whole && v[i].v == v1);
             }
+            state.pack = 0; /* HD text over a pack's image, for the big card's numbers */
             flags |= 16;
         }
     }
@@ -1644,11 +1647,14 @@ static size_t rectangle(const uint32_t *words, size_t count)
         ? (scale > 1 ? TexturePack_BankEntryFor(state.bank, state.page_x, state.page_y, state.depth, state.clut_x,
                                                 state.clut_y, base.u, base.v) : 0)
         : TexturePack_EntryFor(state.page_x, state.page_y, state.depth, state.clut_x, state.clut_y, base.u, base.v)) : 0;
-    if (w && h && textured && hd_hud && !state.pack && !state.bank) {
-        /* HD numbers and labels (a texture pack's image comes first). */
+    if (w && h && textured && hd_hud && !state.bank &&
+        (!state.pack || HdText_CardStat(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y))) {
+        /* HD numbers and labels (a texture pack's image comes first, but for
+         * the big card's own: HdText_CardStat). */
         int atlas_u, atlas_v;
         if (HdText_Hud(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y, base.u, base.v, w, h, scale,
                        &atlas_u, &atlas_v)) {
+            state.pack = 0;
             block(base.x * scale, base.y * scale, w * scale, h * scale, atlas_u, atlas_v, atlas_u + w, atlas_v + h,
                   &base, flags | 16);
             name_over_panel(base.x, base.y, w, h, base.u, base.v, w, h, &base, flags);
