@@ -31,6 +31,7 @@ extern int Pgxp_Active;
 typedef struct PgxpVertex {
     uint32_t index;
     float x, y, w;
+    uint32_t kept; /* 1: the big card's own vertex (Pgxp_CardBegin), whose whole texel footprint is drawn */
 } PgxpVertex;
 
 void Pgxp_Project(uint32_t word, double x, double y, double w);

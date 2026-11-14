@@ -579,6 +579,7 @@ void DrawOTag(u32 *list)
             } else {
                 continue;
             }
+            vertex->kept = at == 2;
             if (!positions && at != 2) {
                 vertex->x = (float)(int16_t)(frame_words[i] & 0xffffu);
                 vertex->y = (float)(int16_t)(frame_words[i] >> 16);
