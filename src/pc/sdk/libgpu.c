@@ -558,7 +558,9 @@ void DrawOTag(u32 *list)
      * depth is used (textures in perspective); at level 2 the seams between
      * a model's parts stay closed (snap_seams). */
     pending_precise = 0;
-    if (Pgxp_Active) {
+    /* The big card's pieces (Pgxp_CardBegin) are looked for even with the
+     * setting off: only those kept by its scope, at their exact positions. */
+    if (Pgxp_Active || Pgxp_CardSeen()) {
         static unsigned frames, placed, matched;
         int positions = Settings_Get(SET_PGXP) >= 2;
         size_t i;
@@ -568,15 +570,16 @@ void DrawOTag(u32 *list)
             if (!Pgxp_MaybeVertexWord(frame_words[i])) continue;
             at = Pgxp_FindAt(frame_addresses[i], frame_words[i], &vertex->x, &vertex->y, &vertex->w);
             if (at > 0) {
+                if (!Pgxp_Active && at != 2) continue; /* only the card's pieces */
                 placed++;
             } else if (at < 0) {
                 continue;
-            } else if (Pgxp_Find(frame_words[i], &vertex->x, &vertex->y, &vertex->w)) {
+            } else if (Pgxp_Active && Pgxp_Find(frame_words[i], &vertex->x, &vertex->y, &vertex->w)) {
                 matched++;
             } else {
                 continue;
             }
-            if (!positions) {
+            if (!positions && at != 2) {
                 vertex->x = (float)(int16_t)(frame_words[i] & 0xffffu);
                 vertex->y = (float)(int16_t)(frame_words[i] >> 16);
             }
@@ -594,6 +597,7 @@ void DrawOTag(u32 *list)
     /* Only the OpenGL picture draws the precise vertices (SoftGpu_Gp0 hands
      * them to its recorder): without one at 2x and up, nothing is tracked. */
     Pgxp_Active = Settings_Get(SET_PGXP) && !SoftGpu_WideRastered();
+    Pgxp_CardAllowed = Settings_Get(SET_CARD_PRECISE) && !SoftGpu_WideRastered();
 }
 
 void GsDrawOt(void *descriptor)

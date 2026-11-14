@@ -29,6 +29,7 @@
 #include "soft_gpu.h"
 #include "texture_pack.h"
 #include "pc/cards/card_layout.h"
+#include "pc/cards/art.h"
 #include "pc/text/hd_text.h"
 #include "pc/platform/settings.h"
 #include "pc/compat/signal.h"
@@ -1337,19 +1338,29 @@ static size_t polygon(const uint32_t *words, size_t count)
         : TexturePack_EntryFor(state.page_x, state.page_y, state.depth, state.clut_x, state.clut_y, v[0].u, v[0].v)) : 0;
     if (quad && textured && hd_hud && !state.pack && !state.bank) {
         /* A digit or the panel drawn as a quad (a clip-tested field card):
-         * a texture pack's image, where one paints it, comes first. */
+         * a texture pack's image, where one paints it, comes first. A card
+         * drawn at its exact place (all four corners precise, Pgxp_CardBegin)
+         * is a sprite whose texels run u0..u0+w-1 over a quad w wide: the
+         * texels it shows are the whole w x h, the last column and row
+         * included (a rectangle says so, block()), which the HD picture is
+         * asked for first. */
         int u0 = v[0].u, v0 = v[0].v, u1 = v[0].u, v1 = v[0].v, atlas_u, atlas_v;
+        int whole = v[0].precise && v[1].precise && v[2].precise && v[3].precise;
         for (i = 1; i < 4; i++) {
             if (v[i].u < u0) u0 = v[i].u;
             if (v[i].v < v0) v0 = v[i].v;
             if (v[i].u > u1) u1 = v[i].u;
             if (v[i].v > v1) v1 = v[i].v;
         }
-        if (HdText_Hud(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y, u0, v0, u1 - u0, v1 - v0,
-                       scale, &atlas_u, &atlas_v)) {
+        if (whole && !HdText_Hud(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y, u0, v0,
+                                 u1 - u0 + 1, v1 - v0 + 1, scale, &atlas_u, &atlas_v)) {
+            whole = 0;
+        }
+        if (whole || HdText_Hud(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y, u0, v0, u1 - u0,
+                                v1 - v0, scale, &atlas_u, &atlas_v)) {
             for (i = 0; i < 4; i++) {
-                v[i].u = atlas_u + v[i].u - u0;
-                v[i].v = atlas_v + v[i].v - v0;
+                v[i].u = atlas_u + v[i].u - u0 + (whole && v[i].u == u1);
+                v[i].v = atlas_v + v[i].v - v0 + (whole && v[i].v == v1);
             }
             flags |= 16;
         }
@@ -1371,9 +1382,15 @@ static size_t polygon(const uint32_t *words, size_t count)
         if (HdText_TitleCard(state.page_x, state.page_y, v[0].u, v[0].v, scale, &atlas_u, &atlas_v, &title_u, &title_v,
                          &title_card)) {
             if (CardLayout_TitleStyled(title_card)) flags |= 128;
-            for (i = 0; i < vertices_n; i++) {
-                v[i].u = atlas_u + v[i].u - title_u;
-                v[i].v = atlas_v + v[i].v - title_v;
+            /* Drawn at its exact place (Pgxp_CardBegin): the plate's last
+             * column and row are shown too, as in the HUD's labels above. */
+            {
+                int whole = v[0].precise && v[1].precise && v[2].precise && (!quad || v[3].precise);
+                for (i = 0; i < vertices_n; i++) {
+                    int du = v[i].u - title_u, dv = v[i].v - title_v;
+                    v[i].u = atlas_u + du + (whole && du == CARD_TITLE_WIDTH - 1);
+                    v[i].v = atlas_v + dv + (whole && dv == CARD_TITLE_HEIGHT - 1);
+                }
             }
             state.pack = 0;
             flags |= 16;

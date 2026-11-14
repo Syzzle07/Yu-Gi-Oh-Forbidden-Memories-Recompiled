@@ -38,6 +38,33 @@ int main(void)
     Pgxp_AddPrimMoved(packet, 5, -3);
     assert(Pgxp_FindAt(address, packet[2], &x, &y, &w) == 1 && x == a[0] + 5 && y == a[1] - 3 && w == a[2]);
 
+    /* The big card's scope: nothing is tracked outside it (setting off), and
+     * inside it the stored words are kept (FindAt says 2) whatever PGXP is. */
+    {
+        uint32_t card[] = {0x04ffffff, 0x2c000000, 0x0016000c, 0x00160016, 0x00200010};
+        uint32_t card_at = ((uint32_t)(uintptr_t)card & 0x00ffffffu) + 8;
+        Pgxp_Active = 0;
+        Pgxp_CardAllowed = 0;
+        Pgxp_CardBegin();
+        assert(Pgxp_Active == 0 && !Pgxp_CardSeen()); /* not allowed: nothing begins */
+        Pgxp_CardAllowed = 1;
+        Pgxp_CardBegin();
+        assert(Pgxp_Active == 1);
+        Pgxp_Stored(card[2], a);
+        Pgxp_AddPrim(card);
+        Pgxp_CardEnd();
+        assert(Pgxp_Active == 0 && Pgxp_CardSeen());
+        assert(Pgxp_FindAt(card_at, card[2], &x, &y, &w) == 2 && x == a[0] && y == a[1]);
+        Pgxp_CardEnd(); /* ending twice changes nothing */
+        assert(Pgxp_Active == 0);
+        Pgxp_NextFrame();
+        assert(Pgxp_CardSeen());
+        Pgxp_NextFrame();
+        assert(!Pgxp_CardSeen());
+        Pgxp_CardAllowed = 0;
+        Pgxp_Active = 1;
+    }
+
     /* Close to the camera: R11 = R33 = 0.5 put the vertex at view x -150.5,
      * z 160.5, which the GTE truncates to IR1 = -151 and SZ3 = 160 before
      * it divides. The word is -284, the vertex really at -281.3: outside the

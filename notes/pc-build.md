@@ -3437,6 +3437,23 @@ at 2x and up.
 - One limit: vertices `GsSortPoly` moves by its offsets no longer match
   their word and stay rounded.
 
+**The big card (`card_precise`).** The game's big card (`func_800291E0`: the
+inspect view, and what a mod draws with it, such as Mulligan's hand) drawn
+scaled used to have every piece rounded to whole console pixels, so a card at
+0.4 had digits of uneven height, a frame border of uneven width and a clipped
+DFD label. While it is drawn scaled and flat (no turn about x or y; at full
+size nothing differs), `func_80028B08` and its frame plate
+(`DisplayObject_RenderSpriteSheet`) call `Pgxp_CardBegin`/`Pgxp_CardEnd`
+(`card_precise.h`): projections are tracked as with PGXP on, only between the
+two, the vertex words stored meanwhile are marked kept (`Pgxp_FindAt` returns
+2), and `DrawOTag` hands those on at their exact positions with the `pgxp`
+setting at any level, which is also how they are found without it. The pieces
+are not divided into sub-quads (`ProjectionOut.f4` 0): a flat quad has one
+depth, and the sub-quads' corners rounded again. `gl_picture.c` then takes an
+exact quad's texels as the whole `w` x `h` (a sprite's last column and row, as a
+rectangle does) when it asks for its HD label, digit or title picture; it was
+one texel short. GL at 2x and up only; `card_precise` (default 1) turns it off.
+
 ### Deterministic PC checks
 
 `make check-pc` rebuilds the native game and portable C tests, runs every

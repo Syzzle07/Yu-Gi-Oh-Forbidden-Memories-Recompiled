@@ -20,6 +20,7 @@
 #include <string.h>
 #include "pc/cards/pack_shop.h"
 #include "pc/cards/card_layout_art.h"
+#include "card_precise.h"
 #include "duel_card_viewer.h"
 #include "duel_effect_resource_record.h"
 #include "pc/debug/log.h"
@@ -83,7 +84,21 @@ static void submit_back_cell(u32 attribute, u32 rgb, s32 x, s32 y, s32 w, s32 h,
  * attribute's 0x08000000 bit asked for that, or as a rotated/scaled sprite
  * about the object's +0x48 pivot. The scale and color are written through
  * GsSPRITE's own members, which is the view libgs gives the record. */
+#ifdef MEMORIES_PC
+/* The card frame's exact-place scope (card_precise.h) ends here, whichever
+ * return the drawing took. */
+static void render_sprite_sheet(DisplayObject *object, s32 ot, s32 depth);
+
 void DisplayObject_RenderSpriteSheet(DisplayObject *object, s32 ot, s32 depth)
+{
+    render_sprite_sheet(object, ot, depth);
+    Pgxp_CardEnd();
+}
+
+static void render_sprite_sheet(DisplayObject *object, s32 ot, s32 depth)
+#else
+void DisplayObject_RenderSpriteSheet(DisplayObject *object, s32 ot, s32 depth)
+#endif
 {
     SpritePrim *sprite;
     SpriteSheetWork *work;
@@ -181,6 +196,9 @@ retry:
             goto retry;
         }
         work->mode = 0xF0000;
+#ifdef MEMORIES_PC
+        if (CardPrecise_IsFrame(object)) CardPrecise_Begin(object, &work->proj);
+#endif
     }
 #ifdef MEMORIES_PC
     /* The front of a card whose place a card pack's whole picture takes

@@ -42,8 +42,9 @@ int Pgxp_Find(uint32_t word, float *x, float *y, float *w);
  * drops what was kept for the address. */
 void Pgxp_StoreAt(uint32_t address, uint32_t word, const float *xyw);
 /* 1 when `word` at `address` was stored this frame or the last with precise
- * values, -1 when stored without (it stays at whole pixels: not to be
- * looked up by value either), 0 when not stored. */
+ * values, 2 when it was also kept by the card's scope (below: its position
+ * stays exact at any `pgxp` level), -1 when stored without (it stays at
+ * whole pixels: not to be looked up by value either), 0 when not stored. */
 int Pgxp_FindAt(uint32_t address, uint32_t word, float *x, float *y, float *w);
 /* The game's own code storing an SXY entry (gte_stsxy), with its precise
  * values or NULL. The next addPrim tags the primitive's words that hold
@@ -55,6 +56,22 @@ void Pgxp_AddPrim(const void *packet);
 void Pgxp_AddPrimMoved(const void *packet, int dx, int dy);
 /* The projections so far were collected: those of the next frame follow. */
 void Pgxp_NextFrame(void);
+
+/* The big card (func_80028B08 and its frame plate) drawn scaled keeps the
+ * exact places of its pieces, whatever the `pgxp` setting is: between
+ * Pgxp_CardBegin and Pgxp_CardEnd projections are tracked as with PGXP on, and
+ * the vertex words stored meanwhile are marked "kept" (Pgxp_FindAt returns 2
+ * for them), which DrawOTag (libgpu.c) then hands on at their exact position
+ * rather than snapped to the console's whole pixel. Nothing outside the scope
+ * is tracked, so the cost is the card's few quads. Pgxp_CardAllowed is set
+ * by DrawOTag: the `card_precise` setting, with the OpenGL picture at 2x or
+ * more; Begin does nothing while it is 0. */
+extern int Pgxp_CardAllowed;
+void Pgxp_CardBegin(void);
+void Pgxp_CardEnd(void);
+/* Whether a card piece was kept this frame or the last, so DrawOTag has
+ * words to look for. */
+int Pgxp_CardSeen(void);
 /* Whether a stored word's halves could be a projected vertex's screen x, y at
  * all: the GTE clamps a projection to -1024..1023, and LIBGS adds at most a
  * screen's offset to it, so a genuine vertex never reaches +-2048; color,

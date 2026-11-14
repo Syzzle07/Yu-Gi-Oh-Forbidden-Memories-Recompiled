@@ -44,6 +44,11 @@ static const SettingInfo info[SET_COUNT] = {
     /* 1: the Build Deck's chest has one row for a card and its variants, L3 and R3 stepping through them
      * (build_deck_fold.h). Nothing differs while no mod adds a variant. */
     [SET_BUILD_DECK_FOLD_VARIANTS] = {"build_deck_fold_variants", NULL, "MEMORIES_BUILD_DECK_FOLD_VARIANTS", NULL, 1, 0, 1},
+    /* 1: the game's big card (func_800291E0: the inspect view, and what a mod
+     * draws with it) keeps the exact sub-pixel places of its pieces when it is
+     * scaled, instead of the console's whole pixels (pgxp.h, libgpu.c). Only
+     * the OpenGL picture at 2x and up draws them; nothing differs at full size. */
+    [SET_CARD_PRECISE] = {"card_precise", NULL, "MEMORIES_CARD_PRECISE", NULL, 1, 0, 1},
     /* Help > updates (update_check.h): look for a newer release at start
      * (on unless the player turns it off: it only tells, never installs)
      * and count pre-releases as newer. */

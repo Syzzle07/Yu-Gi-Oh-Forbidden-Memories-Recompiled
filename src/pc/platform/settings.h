@@ -75,6 +75,7 @@ typedef enum {
     SET_DUEL_HUD_EDGES,         /* widescreen: the duel's life-point panel and FIELD box at the picture's edges */
     SET_LIBRARY_FOLD_VARIANTS,  /* the Library shows a card and its variants as one entry */
     SET_BUILD_DECK_FOLD_VARIANTS,  /* the Build Deck's chest does too */
+    SET_CARD_PRECISE,           /* the big card (inspect, Mulligan, mods) is drawn at exact sub-pixel places */
     SET_COUNT
 } SettingId;
 
