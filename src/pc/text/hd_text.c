@@ -93,6 +93,7 @@ typedef struct {
     int card;       /* 0 for a free place */
     uint32_t name;  /* a hash of the name it was drawn from */
     unsigned used;  /* when it was last asked for */
+    int w, h;       /* its size in pixels when drawn smaller than the plate's, else 0 */
 } Title;
 static TitleUpload title_uploads[TITLE_UPLOADS];
 static unsigned title_upload_next, title_clock;
@@ -878,8 +879,11 @@ int HdText_Title(int page_x, int page_y, int u, int v, int wanted, int *atlas_u,
     return HdText_TitleCard(page_x, page_y, u, v, wanted, atlas_u, atlas_v, title_u, title_v, NULL);
 }
 
-int HdText_TitleCard(int page_x, int page_y, int u, int v, int wanted, int *atlas_u, int *atlas_v, int *title_u,
-                     int *title_v, int *card)
+/* The place of the title of the plate the primitive at page_x, page_y, u, v
+ * samples, drawn at `pw` x `ph` pixels (0: the plate's own size at the
+ * factor): its pixel in the atlas. */
+static int title_place(int page_x, int page_y, int u, int v, int wanted, int pw, int ph, int *atlas_x, int *atlas_y,
+                       int *title_u, int *title_v, int *card)
 {
     const uint16_t *words = SoftGpu_Vram();
     int vx = page_x + (u & 255) / 4, vy = page_y + (v & 255), i, place = -1, oldest = 0;
@@ -902,7 +906,7 @@ int HdText_TitleCard(int page_x, int page_y, int u, int v, int wanted, int *atla
     if (wanted != factor && !make_atlas(wanted)) return 0;
     title_clock++;
     for (i = 0; i < TITLE_PLACES; i++) {
-        if (titles[i].card == upload->card && titles[i].name == hash) place = i;
+        if (titles[i].card == upload->card && titles[i].name == hash && titles[i].w == pw && titles[i].h == ph) place = i;
         if (titles[i].used < titles[oldest].used) oldest = i;
     }
     if (place < 0) {
@@ -911,19 +915,51 @@ int HdText_TitleCard(int page_x, int page_y, int u, int v, int wanted, int *atla
         int y0 = (TITLE_TOP + oldest / TITLES_ACROSS) * CELL * factor, y;
         for (y = 0; y < CELL * factor; y++) memset(atlas + (size_t)(y0 + y) * side + x0, 0, (size_t)CARD_TITLE_WIDTH * factor);
         titles[oldest].card = 0;
-        if (!CardArt_TitlePicture(name, factor, atlas + (size_t)y0 * side + x0, side)) return 0;
+        if (!(pw ? CardArt_TitleSized(name, pw, ph, atlas + (size_t)y0 * side + x0, side)
+                 : CardArt_TitlePicture(name, factor, atlas + (size_t)y0 * side + x0, side))) {
+            return 0;
+        }
         if (y0 < first_dirty || last_dirty < first_dirty) first_dirty = y0;
         if (y0 + CELL * factor - 1 > last_dirty) last_dirty = y0 + CELL * factor - 1;
         titles[oldest].card = upload->card;
         titles[oldest].name = hash;
+        titles[oldest].w = pw;
+        titles[oldest].h = ph;
         place = oldest;
     }
     titles[place].used = title_clock;
-    *atlas_u = (place % TITLES_ACROSS) * CARD_TITLE_WIDTH;
-    *atlas_v = (TITLE_TOP + place / TITLES_ACROSS) * CELL;
+    *atlas_x = (place % TITLES_ACROSS) * CARD_TITLE_WIDTH * factor;
+    *atlas_y = (TITLE_TOP + place / TITLES_ACROSS) * CELL * factor;
     *title_u = (upload->x - page_x) * 4;
     *title_v = upload->y - page_y;
     if (card) *card = upload->card;
+    return 1;
+}
+
+int HdText_TitleCard(int page_x, int page_y, int u, int v, int wanted, int *atlas_u, int *atlas_v, int *title_u,
+                     int *title_v, int *card)
+{
+    int x, y;
+    if (!title_place(page_x, page_y, u, v, wanted, 0, 0, &x, &y, title_u, title_v, card)) return 0;
+    *atlas_u = x / factor;
+    *atlas_v = y / factor;
+    return 1;
+}
+
+int HdText_TitleSized(int page_x, int page_y, int u, int v, int wanted, int width, int height, float *atlas_u,
+                      float *atlas_v, float *step_u, float *step_v, int *title_u, int *title_v, int *card)
+{
+    int x, y;
+    /* A place holds the plate at the factor: nothing larger is drawn there. */
+    if (wanted < 2 || wanted > MAX_FACTOR || width < 4 || height < 3 || width > CARD_TITLE_WIDTH * wanted ||
+        height > CARD_TITLE_HEIGHT * wanted) {
+        return 0;
+    }
+    if (!title_place(page_x, page_y, u, v, wanted, width, height, &x, &y, title_u, title_v, card)) return 0;
+    *atlas_u = (float)x / (float)factor;
+    *atlas_v = (float)y / (float)factor;
+    *step_u = (float)width / (float)CARD_TITLE_WIDTH / (float)factor;
+    *step_v = (float)height / (float)CARD_TITLE_HEIGHT / (float)factor;
     return 1;
 }
 

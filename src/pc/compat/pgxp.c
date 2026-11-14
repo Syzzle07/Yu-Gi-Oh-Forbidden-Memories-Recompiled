@@ -27,6 +27,9 @@ typedef struct {
 static Entry table[2][TABLE_SIZE];
 static unsigned frame = 2;
 int Pgxp_Active;
+/* The card's scope (pgxp.h): on between Pgxp_CardBegin and Pgxp_CardEnd; what
+ * Pgxp_Active was before it; frames (2, 1, 0) since a piece was kept. */
+static int card_scope, card_was_active, card_seen;
 
 static unsigned first(uint32_t word)
 {
@@ -92,6 +95,7 @@ typedef struct {
     uint32_t address, word;
     unsigned frame;
     int known; /* 1 with precise values, 0 without, -1 forgotten */
+    int kept;  /* stored inside the card's scope (Pgxp_CardBegin) */
     float x, y, w;
 } Placed;
 
@@ -135,6 +139,8 @@ void Pgxp_StoreAt(uint32_t address, uint32_t word, const float *xyw)
     if (!entry) return; /* crowded: left to Pgxp_Find */
     entry->word = word;
     entry->known = xyw != 0;
+    entry->kept = card_scope && xyw != 0;
+    if (entry->kept) card_seen = 2;
     if (xyw) {
         entry->x = xyw[0];
         entry->y = xyw[1];
@@ -151,7 +157,7 @@ int Pgxp_FindAt(uint32_t address, uint32_t word, float *x, float *y, float *w)
     *x = entry->x;
     *y = entry->y;
     *w = entry->w;
-    return 1;
+    return entry->kept ? 2 : 1;
 }
 
 /* The game's own stores of projected vertices (gte_stsxy: Memories_GteStore)
@@ -229,4 +235,28 @@ void Pgxp_NextFrame(void)
 {
     frame++;
     stored_count = 0;
+    if (card_seen > 0) card_seen--;
+}
+
+int Pgxp_CardAllowed;
+
+void Pgxp_CardBegin(void)
+{
+    if (!Pgxp_CardAllowed || card_scope) return;
+    card_scope = 1;
+    card_was_active = Pgxp_Active;
+    Pgxp_Active = 1; /* rtp() and the stores of vertices record from here */
+}
+
+void Pgxp_CardEnd(void)
+{
+    if (!card_scope) return;
+    card_scope = 0;
+    Pgxp_Active = card_was_active;
+    stored_count = 0; /* a vertex stored for no primitive is not the next one's */
+}
+
+int Pgxp_CardSeen(void)
+{
+    return card_seen > 0;
 }

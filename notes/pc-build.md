@@ -2807,6 +2807,28 @@ a change to the OpenGL picture above, so it shows at internal 2x and up,
 in widescreen too. The software picture (`MEMORIES_GL_PICTURE=0`) and 1x
 are as before.
 
+Drawn smaller than its picture is (a card shrunk by a mod, a panel scaled
+down), a pixel spans several of the glyph picture's texels. The shader then
+averages the texels the pixel covers, as many as it spans each way (up to
+6), through the glyph's palette, and mixes the pixel over what is under it
+as much as they cover it (`cover`, as the texture packs' partly clear
+pixels are). Taking one texel instead, as it did, dropped the thin strokes
+of a card's title and tore the letters. At its own size or larger a pixel
+spans one texel and the result is as before.
+
+A card's title is set again at the size it shows instead. A plate drawn
+whole, upright and at its exact place (a card scaled flat, see `card_precise`)
+at less than 95% of its picture's size is asked for with `HdText_TitleSized`
+(the plate's width and height in pixels of the picture): `CardArt_TitleSized`
+sets the name, Times at the plate's height, in one of the atlas's title
+places, cached by card, name and size (an animation that shrinks a card draws
+a new size a frame; a place holds the plate at the factor, so nothing larger
+is drawn there). The vertices carry the texel (`Vertex.su`, `sv`: one plate
+texel steps `step_u`, `step_v` atlas texels, which are fractional), so the
+shader needs no change and a pixel of the picture is one atlas pixel. What
+cannot be read at a size is not helped: at internal 2x a plate at 25% is
+48 x 7 pixels, 2 pixels a letter.
+
 The retail font is anti-aliased in its indices, which the text palettes run
 from black up to the text's color. The dark outline is the lowest index
 (1, and 2-3 in the large font). Above it, an index is how bright the texel
@@ -3464,6 +3486,23 @@ at 2x and up.
   with PGXP on: their 2D is not projected.
 - One limit: vertices `GsSortPoly` moves by its offsets no longer match
   their word and stay rounded.
+
+**The big card (`card_precise`).** The game's big card (`func_800291E0`: the
+inspect view, and what a mod draws with it, such as Mulligan's hand) drawn
+scaled used to have every piece rounded to whole console pixels, so a card at
+0.4 had digits of uneven height, a frame border of uneven width and a clipped
+DFD label. While it is drawn scaled and flat (no turn about x or y; at full
+size nothing differs), `func_80028B08` and its frame plate
+(`DisplayObject_RenderSpriteSheet`) call `Pgxp_CardBegin`/`Pgxp_CardEnd`
+(`card_precise.h`): projections are tracked as with PGXP on, only between the
+two, the vertex words stored meanwhile are marked kept (`Pgxp_FindAt` returns
+2), and `DrawOTag` hands those on at their exact positions with the `pgxp`
+setting at any level, which is also how they are found without it. The pieces
+are not divided into sub-quads (`ProjectionOut.f4` 0): a flat quad has one
+depth, and the sub-quads' corners rounded again. `gl_picture.c` then takes an
+exact quad's texels as the whole `w` x `h` (a sprite's last column and row, as a
+rectangle does) when it asks for its HD label, digit or title picture; it was
+one texel short. GL at 2x and up only; `card_precise` (default 1) turns it off.
 
 ### Deterministic PC checks
 

@@ -20,6 +20,7 @@
 #include "pc/cards/cards.h"
 #include "pc/platform/platform.h"
 #include "pc/text/hd_text.h"
+#include "card_precise.h"
 #include "pc/cards/attributes.h"
 #include "pc/debug/log.h"
 #endif
@@ -403,7 +404,20 @@ static u32 CardLayout_Tint(u32 rgb, s32 r, s32 g, s32 b)
 }
 #endif
 
+#ifdef MEMORIES_PC
+/* The card's exact-place scope (card_precise.h) ends here, whichever return
+ * the drawing took. */
+static void card_preview_draw(DisplayObject *obj, s32 arg1);
+
 void func_80028B08(DisplayObject *obj, s32 arg1) {
+    card_preview_draw(obj, arg1);
+    Pgxp_CardEnd();
+}
+
+static void card_preview_draw(DisplayObject *obj, s32 arg1) {
+#else
+void func_80028B08(DisplayObject *obj, s32 arg1) {
+#endif
     u8 buf1[5];
     u8 buf2[5];
     Func80028B08Extra *EXT;
@@ -491,6 +505,9 @@ void func_80028B08(DisplayObject *obj, s32 arg1) {
             ) <= 0) {
             return;
         }
+#ifdef MEMORIES_PC
+        CardPrecise_Begin(win, (struct ProjectionOut *)EXT);
+#endif
         arg = (((s16)win->field_14 - 1) & 0xFFFF) | 0xF0000;
         *(u32 *)&CTX->field_4 = win->field_0C;
         CTX->field_3 = 9;

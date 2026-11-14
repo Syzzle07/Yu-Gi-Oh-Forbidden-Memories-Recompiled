@@ -29,6 +29,7 @@
 #include "soft_gpu.h"
 #include "texture_pack.h"
 #include "pc/cards/card_layout.h"
+#include "pc/cards/art.h"
 #include "pc/text/hd_text.h"
 #include "pc/platform/settings.h"
 #include "pc/compat/signal.h"
@@ -535,6 +536,7 @@ static const char *fragment_source =
     "    st += back * (1.0 - 1.0 / float(scale));\n"
     "    vec2 half_step = 0.5 * (dFdx(st) + dFdy(st));\n"
     "    float spread = max(fwidth(st.x), fwidth(st.y));\n"
+    "    vec2 st_span = fwidth(st);\n"
     "    float cover = 1.0;\n"
     "    if ((flags & 4) != 0) {\n"
     "        float ub = st.x + 1.0 / 256.0, vb = st.y + 1.0 / 256.0;\n"
@@ -583,6 +585,44 @@ static const char *fragment_source =
     "            if ((flags & 128) != 0) {\n"
     "                uint level = ink == 0u ? 0u : (8u - min(ink, 7u)) * 31u / 7u;\n"
     "                word = level | (level << 5u) | (level << 10u);\n"
+    "            }\n"
+    /* Drawn smaller than the glyph's picture is (a card shrunk, a panel scaled
+     * down), a pixel spans several of the picture's texels and the one read
+     * above is a sample that skips the rest: a thin stroke of a card's title
+     * vanishes and the letters look torn. Then the texels the pixel covers
+     * are averaged, as many as it spans each way (up to 6), through the
+     * palette, and the pixel is mixed over what is under it as much as they
+     * cover it. At its own size, or larger, a pixel spans one and nothing
+     * above changes. */
+    "            vec2 foot = st_span * float(scale);\n"
+    "            ivec2 taps = ivec2(clamp(ceil(foot - 0.05), 1.0, 6.0));\n"
+    "            if (taps.x > 1 || taps.y > 1) {\n"
+    "                vec2 pos = vec2(ub, vb) * float(scale);\n"
+    "                vec3 sum = vec3(0.0);\n"
+    "                float hit = 0.0;\n"
+    "                uint first = 0u;\n"
+    "                for (int j = 0; j < taps.y; j++) {\n"
+    "                    for (int i = 0; i < taps.x; i++) {\n"
+    "                        vec2 o = ((vec2(float(i), float(j)) + 0.5) / vec2(taps) - 0.5) * foot;\n"
+    "                        ivec2 tap = clamp(ivec2(floor(pos + o)), ivec2(0), textureSize(glyphs, 0) - 1);\n"
+    "                        uint k = texelFetch(glyphs, tap, 0).r;\n"
+    "                        uint w = word_at(page.z + int(k), page.w);\n"
+    "                        if ((flags & 128) != 0) {\n"
+    "                            uint lv = k == 0u ? 0u : (8u - min(k, 7u)) * 31u / 7u;\n"
+    "                            w = lv | (lv << 5u) | (lv << 10u);\n"
+    "                        }\n"
+    "                        if (w != 0u) {\n"
+    "                            sum += expand(w);\n"
+    "                            hit += 1.0;\n"
+    "                            if (first == 0u) first = w;\n"
+    "                        }\n"
+    "                    }\n"
+    "                }\n"
+    "                if (hit == 0.0) discard;\n"
+    "                word = first;\n"
+    "                t = sum / hit;\n"
+    "                cover = hit / float(taps.x * taps.y);\n"
+    "                replaced = true;\n"
     "            }\n"
     /* A capture (SoftGpu_Capture): a 16-bit texel there keeps its word,
      * which says whether it is transparent and semi-transparent, and takes
@@ -1043,6 +1083,8 @@ typedef struct Vertex {
     int x, y, r, g, b, u, v;
     int precise;     /* PGXP: fx, fy and q hold where the vertex really is */
     float fx, fy, q;
+    int sized;       /* HD text drawn at the size shown: su, sv are the texel, not u, v */
+    float su, sv;
 } Vertex;
 
 /* PGXP (pc/compat/pgxp.h): the batch being read, and the precise vertices
@@ -1202,7 +1244,8 @@ static void triangle(const Vertex *a, const Vertex *b, const Vertex *c, int flag
     for (i = 0; i < 3; i++) {
         float x = v[i]->precise ? v[i]->fx * (float)scale + shift : (float)(v[i]->x * scale) + shift;
         float y = v[i]->precise ? v[i]->fy * (float)scale + shift : (float)(v[i]->y * scale) + shift;
-        set_vertex(&out[i], x, y, (float)v[i]->u, (float)v[i]->v, v[i], flags);
+        set_vertex(&out[i], x, y, v[i]->sized ? v[i]->su : (float)v[i]->u, v[i]->sized ? v[i]->sv : (float)v[i]->v,
+                   v[i], flags);
     }
 }
 
@@ -1278,6 +1321,29 @@ static void set_page(uint32_t value, int polygon)
 static void name_over_panel(int x, int y, int width, int height, int u0, int v0, int w, int h, const Vertex *color,
                             int flags);
 
+/* The size in device pixels of the plate a quad draws, when it is the whole
+ * plate of a card (texels 96 x 14), upright and exact: its top and left
+ * edges. 0 for any other. */
+static int plate_pixels(const Vertex *v, int *width, int *height)
+{
+    float x[3], y[3], dx1, dy1, dx2, dy2;
+    int i;
+    if (!v[0].precise || !v[1].precise || !v[2].precise || !v[3].precise) return 0;
+    if (v[1].u - v[0].u != CARD_TITLE_WIDTH - 1 || v[2].v - v[0].v != CARD_TITLE_HEIGHT - 1) return 0;
+    for (i = 0; i < 3; i++) {
+        x[i] = v[i].fx * (float)scale;
+        y[i] = v[i].fy * (float)scale;
+    }
+    dx1 = x[1] - x[0];
+    dy1 = y[1] - y[0];
+    dx2 = x[2] - x[0];
+    dy2 = y[2] - y[0];
+    if (dx1 < 4.0f || dy2 < 3.0f || dy1 > 1.0f || dy1 < -1.0f || dx2 > 1.0f || dx2 < -1.0f) return 0;
+    *width = (int)(dx1 + 0.5f);
+    *height = (int)(dy2 + 0.5f);
+    return 1;
+}
+
 static size_t polygon(const uint32_t *words, size_t count)
 {
     uint32_t command = words[0] >> 24;
@@ -1337,19 +1403,29 @@ static size_t polygon(const uint32_t *words, size_t count)
         : TexturePack_EntryFor(state.page_x, state.page_y, state.depth, state.clut_x, state.clut_y, v[0].u, v[0].v)) : 0;
     if (quad && textured && hd_hud && !state.pack && !state.bank) {
         /* A digit or the panel drawn as a quad (a clip-tested field card):
-         * a texture pack's image, where one paints it, comes first. */
+         * a texture pack's image, where one paints it, comes first. A card
+         * drawn at its exact place (all four corners precise, Pgxp_CardBegin)
+         * is a sprite whose texels run u0..u0+w-1 over a quad w wide: the
+         * texels it shows are the whole w x h, the last column and row
+         * included (a rectangle says so, block()), which the HD picture is
+         * asked for first. */
         int u0 = v[0].u, v0 = v[0].v, u1 = v[0].u, v1 = v[0].v, atlas_u, atlas_v;
+        int whole = v[0].precise && v[1].precise && v[2].precise && v[3].precise;
         for (i = 1; i < 4; i++) {
             if (v[i].u < u0) u0 = v[i].u;
             if (v[i].v < v0) v0 = v[i].v;
             if (v[i].u > u1) u1 = v[i].u;
             if (v[i].v > v1) v1 = v[i].v;
         }
-        if (HdText_Hud(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y, u0, v0, u1 - u0, v1 - v0,
-                       scale, &atlas_u, &atlas_v)) {
+        if (whole && !HdText_Hud(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y, u0, v0,
+                                 u1 - u0 + 1, v1 - v0 + 1, scale, &atlas_u, &atlas_v)) {
+            whole = 0;
+        }
+        if (whole || HdText_Hud(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y, u0, v0, u1 - u0,
+                                v1 - v0, scale, &atlas_u, &atlas_v)) {
             for (i = 0; i < 4; i++) {
-                v[i].u = atlas_u + v[i].u - u0;
-                v[i].v = atlas_v + v[i].v - v0;
+                v[i].u = atlas_u + v[i].u - u0 + (whole && v[i].u == u1);
+                v[i].v = atlas_v + v[i].v - v0 + (whole && v[i].v == v1);
             }
             flags |= 16;
         }
@@ -1367,13 +1443,38 @@ static size_t polygon(const uint32_t *words, size_t count)
         }
     } else if (!(flags & 16) && textured && hd_text && state.depth == 0 && !state.bank) {
         /* A card's title plate, whole or a piece of the turning card. */
-        int atlas_u, atlas_v, title_u, title_v, title_card;
-        if (HdText_TitleCard(state.page_x, state.page_y, v[0].u, v[0].v, scale, &atlas_u, &atlas_v, &title_u, &title_v,
-                         &title_card)) {
+        int atlas_u, atlas_v, title_u, title_v, title_card, plate_w, plate_h;
+        float sized_u, sized_v, step_u, step_v;
+        if (quad && plate_pixels(v, &plate_w, &plate_h) &&
+            (plate_w < CARD_TITLE_WIDTH * scale * 0.95f || plate_h < CARD_TITLE_HEIGHT * scale * 0.95f) &&
+            HdText_TitleSized(state.page_x, state.page_y, v[0].u, v[0].v, scale, plate_w, plate_h, &sized_u, &sized_v,
+                              &step_u, &step_v, &title_u, &title_v, &title_card)) {
+            /* A plate drawn smaller than its picture: the name set at the
+             * size it shows, one atlas pixel to a pixel of the picture,
+             * where the nearest texel of the large one skipped strokes. The
+             * plate's last column and row end at the picture's edge. */
             if (CardLayout_TitleStyled(title_card)) flags |= 128;
-            for (i = 0; i < vertices_n; i++) {
-                v[i].u = atlas_u + v[i].u - title_u;
-                v[i].v = atlas_v + v[i].v - title_v;
+            for (i = 0; i < 4; i++) {
+                int du = v[i].u - title_u + (v[i].u - title_u == CARD_TITLE_WIDTH - 1);
+                int dv = v[i].v - title_v + (v[i].v - title_v == CARD_TITLE_HEIGHT - 1);
+                v[i].sized = 1;
+                v[i].su = sized_u + (float)du * step_u;
+                v[i].sv = sized_v + (float)dv * step_v;
+            }
+            state.pack = 0;
+            flags |= 16;
+        } else if (HdText_TitleCard(state.page_x, state.page_y, v[0].u, v[0].v, scale, &atlas_u, &atlas_v, &title_u,
+                                    &title_v, &title_card)) {
+            if (CardLayout_TitleStyled(title_card)) flags |= 128;
+            /* Drawn at its exact place (Pgxp_CardBegin): the plate's last
+             * column and row are shown too, as in the HUD's labels above. */
+            {
+                int whole = v[0].precise && v[1].precise && v[2].precise && (!quad || v[3].precise);
+                for (i = 0; i < vertices_n; i++) {
+                    int du = v[i].u - title_u, dv = v[i].v - title_v;
+                    v[i].u = atlas_u + du + (whole && du == CARD_TITLE_WIDTH - 1);
+                    v[i].v = atlas_v + dv + (whole && dv == CARD_TITLE_HEIGHT - 1);
+                }
             }
             state.pack = 0;
             flags |= 16;

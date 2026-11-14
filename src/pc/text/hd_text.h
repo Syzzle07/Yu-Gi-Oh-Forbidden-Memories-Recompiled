@@ -44,6 +44,17 @@ int HdText_Title(int page_x, int page_y, int u, int v, int factor, int *atlas_u,
 /* HdText_Title, and the card whose title it is in `*card` (NULL: not wanted). */
 int HdText_TitleCard(int page_x, int page_y, int u, int v, int factor, int *atlas_u, int *atlas_v, int *title_u,
                      int *title_v, int *card);
+/* The same title for a plate drawn smaller than its picture: `width` x
+ * `height` device pixels on the picture (a card shown at 40% on a 4x picture
+ * has a plate 38 x 6 pixels, where the picture of a title is 384 x 56), the
+ * name set at that size instead of the nearest texel of the large one being
+ * taken, which skips whole strokes. The atlas position of the plate's texel
+ * (0, 0) and the atlas texels one plate texel steps over, in the units
+ * HdText_TitleCard's are (pixels / factor, so fractional): a plate texel
+ * u, v is at atlas_u + (u - title_u) * step_u. Returns 0 when the size is not
+ * smaller than the picture, or in no way drawn. */
+int HdText_TitleSized(int page_x, int page_y, int u, int v, int factor, int width, int height, float *atlas_u,
+                      float *atlas_v, float *step_u, float *step_v, int *title_u, int *title_v, int *card);
 
 /* HD numbers and labels (with HD text, HdText_Enabled): the duel's digits
  * (life points, deck counts, the field cards' ATK and DEF, the card view's,
