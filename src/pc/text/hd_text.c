@@ -1548,11 +1548,14 @@ static void make_labels(void)
     labels[label_count - 1].lettering = CARD_WORDS;
     /* The caption of a Magic, Trap or Equip card, 56 x 16 sprites one over the
      * other below the DFD word (func_80028B08, kind_label): a Ritual card shows
-     * the Normal Magic one, as the retail game has it. Cells 0 to 11 of the
-     * second HUD row are free. */
-    add_label(0, 960, 256, 496, 248, 249, "[Normal Magic Card]", 1, CLEAR, 0, 0, 158, 56, 16, 0, 0, 0, 0, 0, 1);
-    add_label(0, 960, 256, 496, 248, 249, "[Trap Card]", 1, CLEAR, 0, 0, 174, 56, 16, 0, 0, 0, 0, 4, 1);
-    add_label(0, 960, 256, 496, 248, 249, "[Equip Magic Card]", 1, CLEAR, 0, 0, 190, 56, 16, 0, 0, 0, 0, 8, 1);
+     * the Normal Magic one, as the retail game has it. Each is four cells wide
+     * and put on cells nothing else uses: the first columns hold the life-point
+     * panel and the opponent's name, columns 4 to 13 the digit sheets, 14 to 25
+     * the card view's labels, the FIELD box and the terrains, then (rows 0, 1, 2
+     * of the last columns) free cells. */
+    add_label(0, 960, 256, 496, 248, 249, "[Normal Magic Card]", 1, CLEAR, 0, 0, 158, 56, 16, 0, 0, 0, 0, 28, 0);
+    add_label(0, 960, 256, 496, 248, 249, "[Trap Card]", 1, CLEAR, 0, 0, 174, 56, 16, 0, 0, 0, 0, 27, 2);
+    add_label(0, 960, 256, 496, 248, 249, "[Equip Magic Card]", 1, CLEAR, 0, 0, 190, 56, 16, 0, 0, 0, 0, 26, 1);
     for (i = 0; i < 10; i++) {
         add_label(0, 960, 256, 496, 248, 249, digits + i * 2, 1, CLEAR, 0, 16 + i * 6, 0x90, 6, 13, 0, 0, 0, 0, 14 + i, 0);
         labels[label_count - 1].lettering = CARD_DIGITS;
