@@ -2807,6 +2807,15 @@ a change to the OpenGL picture above, so it shows at internal 2x and up,
 in widescreen too. The software picture (`MEMORIES_GL_PICTURE=0`) and 1x
 are as before.
 
+Drawn smaller than its picture is (a card shrunk by a mod, a panel scaled
+down), a pixel spans several of the glyph picture's texels. The shader then
+averages the texels the pixel covers, as many as it spans each way (up to
+6), through the glyph's palette, and mixes the pixel over what is under it
+as much as they cover it (`cover`, as the texture packs' partly clear
+pixels are). Taking one texel instead, as it did, dropped the thin strokes
+of a card's title and tore the letters. At its own size or larger a pixel
+spans one texel and the result is as before.
+
 The retail font is anti-aliased in its indices, which the text palettes run
 from black up to the text's color. The dark outline is the lowest index
 (1, and 2-3 in the large font). Above it, an index is how bright the texel
