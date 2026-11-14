@@ -3476,6 +3476,18 @@ exact quad's texels as the whole `w` x `h` (a sprite's last column and row, as a
 rectangle does) when it asks for its HD label, digit or title picture; it was
 one texel short. GL at 2x and up only; `card_precise` (default 1) turns it off.
 
+A card quad the scope kept (`PgxpVertex.kept`, which `DrawOTag` sets for the
+words `Pgxp_FindAt` says 2 for, and the vertex's `kept` in `gl_picture.c`) is
+drawn as a whole: its far texel edges go one on (a float uv, `Vertex.su`),
+and the console's rule of the texels it leaves out does not apply (it took
+the first row of a quad shrunk to a pixel a texel, the top of a DFD label).
+Shrunk, a texture pack's image for a sprite (a pack that paints the ATK, DFD
+and digits) used to be read one pixel a pixel and clumped; for these quads the
+shader (bit 8 of the fade word, `GlVertex.unused`) averages the image's pixels
+a pixel covers, up to 6 each way, inside the sprite's own texels and weighted
+by alpha. Other pack textures (the board far away, a model) keep the single
+read, and at its own size or larger a card reads as before.
+
 ### Deterministic PC checks
 
 `make check-pc` rebuilds the native game and portable C tests, runs every

@@ -137,10 +137,11 @@ static uint32_t *reserve(size_t words)
 }
 
 /* PGXP: the precise vertices of the batch that follows, as they are
- * (index, x, y, w: four words each). */
+ * (index, x, y, w, kept: PGXP_WORDS words each). */
+#define PGXP_WORDS (sizeof(PgxpVertex) / 4)
 static void record_precise(const PgxpVertex *vertices, size_t count)
 {
-    uint32_t *at = reserve(2 + count * 4);
+    uint32_t *at = reserve(2 + count * PGXP_WORDS);
     if (!at) return;
     at[0] = OP_PRECISE;
     at[1] = (uint32_t)count;
@@ -562,9 +563,37 @@ static const char *fragment_source =
     "                int row = int(place >> 16), word_in = int(place & 0xffffu);\n"
     "                int texel_x = word_in * per + (u - (u / per) * per) - pack_entry.y;\n"
     "                if (texel_x >= 0 && texel_x < pack_entry.z) {\n"
-    "                    int px = int(floor((float(texel_x) + fract(ub)) * float(pack_size.x) / float(pack_entry.z)));\n"
-    "                    int py = int(floor((float(row) + fract(vb)) * float(pack_size.y) / float(pack_entry.w)));\n"
-    "                    vec4 p = texelFetch(pack, ivec2(clamp(px, 0, pack_size.x - 1), clamp(py, 0, pack_size.y - 1)), 0);\n"
+    /* A sprite drawn smaller than its own size (a card shrunk by a mod): a
+     * pixel spans several of the pack image's pixels and the one read skips
+     * the rest, so a numeral's strokes clump and drop out. The image's pixels
+     * the pixel covers are averaged (as many as it spans each way, up to 6,
+     * inside the sprite's own texels so the next digit of a sheet does not
+     * bleed in), colors weighted by their alpha. At its own size or larger
+     * the single read below is all there is. */
+    "                        vec2 per_px = vec2(pack_size.xy) / vec2(float(pack_entry.z), float(pack_entry.w));\n"
+    "                        ivec2 ptaps = ivec2(1);\n"
+    "                        if ((mode.w & 256) != 0 && max(st_span.x, st_span.y) * float(scale) > 1.05) ptaps = ivec2(clamp(ceil(st_span * per_px - 0.05), 1.0, 6.0));\n"
+    "                        vec4 p;\n"
+    "                        if (ptaps.x > 1 || ptaps.y > 1) {\n"
+    "                            vec2 centre = vec2(float(texel_x) + fract(ub), float(row) + fract(vb)) * per_px;\n"
+    "                            vec2 lo = vec2(float(texel_x + bounds.x - u), float(row + bounds.y - v)) * per_px;\n"
+    "                            vec2 hi = vec2(float(texel_x + bounds.z + 1 - u), float(row + bounds.w + 1 - v)) * per_px;\n"
+    "                            vec2 foot_p = st_span * per_px;\n"
+    "                            vec4 acc = vec4(0.0);\n"
+    "                            for (int j = 0; j < ptaps.y; j++) {\n"
+    "                                for (int i = 0; i < ptaps.x; i++) {\n"
+    "                                    vec2 o = ((vec2(float(i), float(j)) + 0.5) / vec2(ptaps) - 0.5) * foot_p;\n"
+    "                                    vec2 at_p = clamp(centre + o, lo, hi - 0.001);\n"
+    "                                    vec4 q = texelFetch(pack, clamp(ivec2(floor(at_p)), ivec2(0), pack_size.xy - 1), 0);\n"
+    "                                    acc += vec4(q.rgb * q.a, q.a);\n"
+    "                                }\n"
+    "                            }\n"
+    "                            p = acc.a > 0.0 ? vec4(acc.rgb / acc.a, acc.a / float(ptaps.x * ptaps.y)) : vec4(0.0);\n"
+    "                        } else {\n"
+    "                            int px = int(floor((float(texel_x) + fract(ub)) * float(pack_size.x) / float(pack_entry.z)));\n"
+    "                            int py = int(floor((float(row) + fract(vb)) * float(pack_size.y) / float(pack_entry.w)));\n"
+    "                            p = texelFetch(pack, ivec2(clamp(px, 0, pack_size.x - 1), clamp(py, 0, pack_size.y - 1)), 0);\n"
+    "                        }\n"
     /* A partly clear pixel (a letter's smoothed edge) is mixed over what
      * lies beneath as much as it covers (texture_pack.c, sample). */
     "                    if (p.a < 8.0 / 255.0) discard;\n"
@@ -678,8 +707,8 @@ static const char *fragment_source =
     "    if (!semi) alpha = 1.0 - cover;\n"
     "    else if (mode.y == 0) alpha = 1.0 - 0.5 * cover;\n"
     /* A fading polygon (soft_gpu.h): the result mixed with what is under it. */
-    "    if (mode.w != 0) {\n"
-    "        float f = float(mode.w) / 255.0;\n"
+    "    if ((mode.w & 255) != 0) {\n"
+    "        float f = float(mode.w & 255) / 255.0;\n"
     "        c *= 1.0 - f;\n"
     "        alpha = 1.0 - (1.0 - alpha) * (1.0 - f);\n"
     "    }\n"
@@ -1077,11 +1106,13 @@ static struct {
     int pack; /* the pack entry the primitive being read samples, 0 none */
     int glyph; /* the page word has HD text's mark (hd_text.h) */
     int fade;  /* the polygon being read fades (soft_gpu.h), 0 to 255 */
+    int card;  /* it is a big card's own quad drawn at its exact place (Pgxp_CardBegin) */
 } state;
 
 typedef struct Vertex {
     int x, y, r, g, b, u, v;
     int precise;     /* PGXP: fx, fy and q hold where the vertex really is */
+    int kept;        /* ...and it is the big card's, drawn at its exact place (Pgxp_CardBegin) */
     float fx, fy, q;
     int sized;       /* HD text drawn at the size shown: su, sv are the texel, not u, v */
     float su, sv;
@@ -1100,7 +1131,7 @@ static void find_precise(Vertex *vertex, const uint32_t *word)
 {
     size_t low = 0, high = batch_precise_count;
     uint32_t index;
-    vertex->precise = 0;
+    vertex->precise = vertex->kept = 0;
     if (!batch_precise_count || !batch_words || word < batch_words) return;
     index = (uint32_t)(word - batch_words);
     /* The words are read in order, so the vertex sought is mostly the one
@@ -1119,6 +1150,7 @@ static void find_precise(Vertex *vertex, const uint32_t *word)
     batch_precise_next = low < batch_precise_count && batch_precise[low].index == index ? low + 1 : low;
     if (low < batch_precise_count && batch_precise[low].index == index && batch_precise[low].w > 0) {
         vertex->precise = 1;
+        vertex->kept = (int)batch_precise[low].kept;
         vertex->fx = batch_precise[low].x + (float)state.offset_x;
         vertex->fy = batch_precise[low].y + (float)state.offset_y;
         vertex->q = 1.0f / batch_precise[low].w;
@@ -1199,7 +1231,9 @@ static void set_vertex(GlVertex *out, float x, float y, float u, float v, const 
     out->depth = (uint16_t)state.depth;
     out->blend = (uint16_t)state.blend;
     out->bank = (uint16_t)state.bank;
-    out->unused = (uint16_t)state.fade;
+    /* The fade in the low byte; bit 8 marks a big card's quad (the shader
+     * averages a shrunk pack image only for those). */
+    out->unused = (uint16_t)(state.fade | (state.card ? 256 : 0));
     out->q = (flags & 32) ? from->q : 1.0f;
     out->bounds[0] = (uint16_t)bounds_now[0];
     out->bounds[1] = (uint16_t)bounds_now[1];
@@ -1328,7 +1362,7 @@ static int plate_pixels(const Vertex *v, int *width, int *height)
 {
     float x[3], y[3], dx1, dy1, dx2, dy2;
     int i;
-    if (!v[0].precise || !v[1].precise || !v[2].precise || !v[3].precise) return 0;
+    if (!v[0].kept || !v[1].kept || !v[2].kept || !v[3].kept) return 0;
     if (v[1].u - v[0].u != CARD_TITLE_WIDTH - 1 || v[2].v - v[0].v != CARD_TITLE_HEIGHT - 1) return 0;
     for (i = 0; i < 3; i++) {
         x[i] = v[i].fx * (float)scale;
@@ -1354,6 +1388,7 @@ static size_t polygon(const uint32_t *words, size_t count)
     size_t at = 0;
     int flags = (command & 3) | (textured ? 4 : 0);
     Vertex v[4];
+    int exact;
     if (count < need) return 0;
     memset(v, 0, sizeof(v));
     for (i = 0; i < vertices_n; i++) {
@@ -1410,7 +1445,7 @@ static size_t polygon(const uint32_t *words, size_t count)
          * included (a rectangle says so, block()), which the HD picture is
          * asked for first. */
         int u0 = v[0].u, v0 = v[0].v, u1 = v[0].u, v1 = v[0].v, atlas_u, atlas_v;
-        int whole = v[0].precise && v[1].precise && v[2].precise && v[3].precise;
+        int whole = v[0].kept && v[1].kept && v[2].kept && v[3].kept;
         for (i = 1; i < 4; i++) {
             if (v[i].u < u0) u0 = v[i].u;
             if (v[i].v < v0) v0 = v[i].v;
@@ -1469,7 +1504,7 @@ static size_t polygon(const uint32_t *words, size_t count)
             /* Drawn at its exact place (Pgxp_CardBegin): the plate's last
              * column and row are shown too, as in the HUD's labels above. */
             {
-                int whole = v[0].precise && v[1].precise && v[2].precise && (!quad || v[3].precise);
+                int whole = v[0].kept && v[1].kept && v[2].kept && (!quad || v[3].kept);
                 for (i = 0; i < vertices_n; i++) {
                     int du = v[i].u - title_u, dv = v[i].v - title_v;
                     v[i].u = atlas_u + du + (whole && du == CARD_TITLE_WIDTH - 1);
@@ -1509,17 +1544,37 @@ static size_t polygon(const uint32_t *words, size_t count)
         if (v[i].u > bounds_now[2]) bounds_now[2] = v[i].u;
         if (v[i].v > bounds_now[3]) bounds_now[3] = v[i].v;
     }
+    /* A big card's own quad (Pgxp_CardBegin) is drawn at its exact place and
+     * shows its whole texel footprint, the last column and row too, which
+     * its inclusive corners stop one short of: the far edges go one texel
+     * on, and the console's rule of the texels it leaves out below does
+     * not apply (a quad shrunk to a pixel a texel would lose its first). */
+    exact = textured && !(flags & 16) && v[0].kept && v[1].kept && v[2].kept && (!quad || v[3].kept);
+    if (exact) {
+        int hi_u = v[0].u, hi_v = v[0].v;
+        for (i = 1; i < vertices_n; i++) {
+            if (v[i].u > hi_u) hi_u = v[i].u;
+            if (v[i].v > hi_v) hi_v = v[i].v;
+        }
+        for (i = 0; i < vertices_n; i++) {
+            v[i].sized = 1;
+            v[i].su = (float)v[i].u + (v[i].u == hi_u && hi_u > bounds_now[0]);
+            v[i].sv = (float)v[i].v + (v[i].v == hi_v && hi_v > bounds_now[1]);
+        }
+    }
     /* The texels the console draws (as block() does for rectangles): past
      * them, an atlas holds the next picture. */
     for (i = 0; i < 2; i++) {
-        int rule = bounds_now[i + 2] > bounds_now[i] ? texel_left_out(v, i) : 0;
+        int rule = !exact && bounds_now[i + 2] > bounds_now[i] ? texel_left_out(v, i) : 0;
         if (rule == 1) bounds_now[i + 2]--;
         if (rule == 2) bounds_now[i]++;
     }
     /* Both halves of a quad or neither, or its diagonal would show. */
     if (textured && v[0].precise && v[1].precise && v[2].precise && (!quad || v[3].precise)) flags |= 32;
+    state.card = exact;
     triangle(&v[0], &v[1], &v[2], flags);
     if (quad) triangle(&v[1], &v[2], &v[3], flags);
+    state.card = 0;
     state.fade = 0;
     /* A piece of the life-point panel drawn at another size (a mod's "ui"). */
     if (quad && textured && !state.bank && HdText_PanelCut())
@@ -2394,7 +2449,7 @@ static const char *lean_vertex_source =
     "    uv = texcoord;\n"
     "    rgb = color.rgb;\n"
     "    flags = int(color.a);\n"
-    "    fade = texture_mode.w;\n"
+    "    fade = texture_mode.w & 255;\n"
     "    bounds = texture_bounds;\n"
     "    start = ivec2((texture_page.x - pack_origin.x) * pack_size.z - pack_entry.y, texture_page.y - pack_origin.y);\n"
     "}\n";
@@ -3136,7 +3191,7 @@ int GlPicture_Replay(void)
         size_t used = 1;
         switch (op[0]) {
         case OP_PRECISE:
-            used = 2 + (size_t)op[1] * 4;
+            used = 2 + (size_t)op[1] * PGXP_WORDS;
             if (at + used > count) { at = count; break; }
             batch_precise = (const PgxpVertex *)(op + 2);
             batch_precise_count = op[1];
