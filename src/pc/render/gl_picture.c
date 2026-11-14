@@ -695,6 +695,12 @@ static const char *fragment_source =
     "    if (pass == 1 && semi) discard;\n"
     "    if (pass == 2 && !semi) discard;\n"
     "    c = clamp(c, 0.0, 255.0);\n"
+    /* The card's numbers and labels are drawn by taking their texel from what is
+     * under them (blend mode 2). Over a lighter plate than the retail one, as a
+     * texture pack's frame, the same amount leaves them a light brown: where
+     * HD text takes them over from the pack's near-black images they take
+     * half as much again. */
+    "    if (semi && mode.y == 2 && (mode.w & 512) != 0) c = min(c * 1.5, 255.0);\n"
     "    float alpha = 0.0;\n"
     "    if (semi) {\n"
     "        if (mode.y == 0) { c *= 0.5; alpha = 0.5; }\n"
@@ -1107,6 +1113,7 @@ static struct {
     int glyph; /* the page word has HD text's mark (hd_text.h) */
     int fade;  /* the polygon being read fades (soft_gpu.h), 0 to 255 */
     int card;  /* it is a big card's own quad drawn at its exact place (Pgxp_CardBegin) */
+    int boost; /* HD text drawn in place of a texture pack's image of it: darkened more (below) */
 } state;
 
 typedef struct Vertex {
@@ -1233,7 +1240,7 @@ static void set_vertex(GlVertex *out, float x, float y, float u, float v, const 
     out->bank = (uint16_t)state.bank;
     /* The fade in the low byte; bit 8 marks a big card's quad (the shader
      * averages a shrunk pack image only for those). */
-    out->unused = (uint16_t)(state.fade | (state.card ? 256 : 0));
+    out->unused = (uint16_t)(state.fade | (state.card ? 256 : 0) | (state.boost ? 512 : 0));
     out->q = (flags & 32) ? from->q : 1.0f;
     out->bounds[0] = (uint16_t)bounds_now[0];
     out->bounds[1] = (uint16_t)bounds_now[1];
@@ -1448,6 +1455,7 @@ static size_t polygon(const uint32_t *words, size_t count)
          * asked for first. */
         int u0 = v[0].u, v0 = v[0].v, u1 = v[0].u, v1 = v[0].v, atlas_u, atlas_v;
         int whole = v[0].kept && v[1].kept && v[2].kept && v[3].kept;
+        const int over_pack = state.pack != 0;
         for (i = 1; i < 4; i++) {
             if (v[i].u < u0) u0 = v[i].u;
             if (v[i].v < v0) v0 = v[i].v;
@@ -1465,6 +1473,7 @@ static size_t polygon(const uint32_t *words, size_t count)
                 v[i].v = atlas_v + v[i].v - v0 + (whole && v[i].v == v1);
             }
             state.pack = 0; /* HD text over a pack's image, for the big card's numbers */
+            state.boost = over_pack;
             flags |= 16;
         }
     }
@@ -1578,6 +1587,7 @@ static size_t polygon(const uint32_t *words, size_t count)
     triangle(&v[0], &v[1], &v[2], flags);
     if (quad) triangle(&v[1], &v[2], &v[3], flags);
     state.card = 0;
+    state.boost = 0;
     state.fade = 0;
     /* A piece of the life-point panel drawn at another size (a mod's "ui"). */
     if (quad && textured && !state.bank && HdText_PanelCut())
@@ -1652,11 +1662,14 @@ static size_t rectangle(const uint32_t *words, size_t count)
         /* HD numbers and labels (a texture pack's image comes first, but for
          * the big card's own: HdText_CardStat). */
         int atlas_u, atlas_v;
+        const int over_pack = state.pack != 0;
         if (HdText_Hud(state.depth, state.page_x, state.page_y, state.clut_x, state.clut_y, base.u, base.v, w, h, scale,
                        &atlas_u, &atlas_v)) {
             state.pack = 0;
+            state.boost = over_pack;
             block(base.x * scale, base.y * scale, w * scale, h * scale, atlas_u, atlas_v, atlas_u + w, atlas_v + h,
                   &base, flags | 16);
+            state.boost = 0;
             name_over_panel(base.x, base.y, w, h, base.u, base.v, w, h, &base, flags);
             return need;
         }
